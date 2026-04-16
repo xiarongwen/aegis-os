@@ -1,0 +1,27 @@
+{
+  "workflow_id": "https-github-com-xiarongwen-20260416-201325",
+  "current_state": "L1_RESEARCH",
+  "started_at": "2026-04-16T12:13:25Z",
+  "history": [
+    {
+      "from": "INIT",
+      "to": "L1_RESEARCH",
+      "transitioned_at": "2026-04-16T12:13:25Z"
+    }
+  ],
+  "blockers": [],
+  "retries": {},
+  "requirements_lock_hash": null,
+  "review_loops": {},
+  "active_review_loop": null,
+  "next_state_hint": null,
+  "workflow_type": "planning",
+  "intent_summary": "Research a topic and lock a PRD",
+  "target_state": "L2_REVIEW",
+  "automation": {
+    "enabled": true,
+    "runtime": "codex",
+    "original_request": "\u5e2e\u6211\u8c03\u7814https://github.com/xiarongwen/aegis-os/settings\u9879\u76ee\u5e76\u8f93\u51fa PRD",
+    "last_updated": "2026-04-16T12:13:25Z"
+  }
+}
