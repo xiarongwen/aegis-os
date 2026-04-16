@@ -113,6 +113,28 @@ AEGIS 的价值就在这里。
 
 ---
 
+## 5.1 开发阶段新增执行原则
+
+为了避免 AEGIS 在开发阶段退化成“单 agent 串行写代码”或“多个 agent 同时乱改”，L3 必须引入新的正式原则：
+
+- `DRY-first`
+- `parallel_by_default`
+- `contract_before_code`
+- `owned_write_scope`
+- `host_capability_enhancement`
+
+这些原则的含义是：
+
+- 开发 agent 必须优先复用已有代码、组件、工具函数、schema、流程和文档，而不是重复实现
+- 一旦需求被锁定，就应该优先把任务拆解成多个边界清晰的 specialist work item，并行推进
+- 并行开发前必须冻结共享接口、数据结构和边界约束
+- 每个 agent 都必须有明确 write scope，不能出现多人无边界改同一块代码
+- agent 可以利用 Claude Code / Codex 宿主已有的 skill、工具、子 agent 能力增强执行，但必须经过抽象契约和宿主能力映射层，不允许自由调用环境专属名字
+
+这组原则不是“建议”，而应该是控制面可执法的规则。
+
+---
+
 ## 6. 核心价值主张
 
 AEGIS 的核心价值不是“更强模型”，而是“更强治理”。

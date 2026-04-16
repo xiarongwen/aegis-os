@@ -204,6 +204,21 @@
     "numeric_fields": ["score"],
     "list_fields": ["blockers", "suggestions"]
   },
+  "development_controls": {
+    "required_planning_artifacts": [
+      "workflows/{workflow}/l2-planning/task_breakdown.json",
+      "workflows/{workflow}/l2-planning/implementation-contracts.json"
+    ],
+    "required_principles": [
+      "dry_first",
+      "parallel_by_default",
+      "contract_before_code",
+      "owned_write_scope",
+      "host_capability_enhancement"
+    ],
+    "parallel_scope_conflict_check": true,
+    "require_reuse_audit": true
+  },
   "evolution": {
     "schedule": "0 2 * * *",
     "engine": "darwin-skill",

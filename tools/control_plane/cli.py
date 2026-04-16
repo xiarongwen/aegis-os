@@ -19,10 +19,14 @@ REGISTRY_PATH = ROOT / ".aegis/core/registry.json"
 REGISTRY_SCHEMA_PATH = ROOT / ".aegis/core/registry.schema.json"
 ORCHESTRATOR_PATH = ROOT / ".aegis/core/orchestrator.yml"
 CONTRACTS_PATH = ROOT / "shared-contexts/tool-contracts.yml"
+HOST_CAPABILITY_MAP_PATH = ROOT / "shared-contexts/host-capability-map.yml"
 EVOLUTION_LOG_PATH = ROOT / ".aegis/core/evolution.log"
 REQUIREMENTS_LOCK_SCHEMA_PATH = ROOT / "shared-contexts/requirements-lock-schema.json"
 REQUIREMENTS_TRACEABILITY_SCHEMA_PATH = ROOT / "shared-contexts/requirements-traceability-schema.json"
 REVIEW_LOOP_SCHEMA_PATH = ROOT / "shared-contexts/review-loop-status-schema.json"
+TASK_BREAKDOWN_SCHEMA_PATH = ROOT / "shared-contexts/task-breakdown-schema.json"
+IMPLEMENTATION_CONTRACTS_SCHEMA_PATH = ROOT / "shared-contexts/implementation-contracts-schema.json"
+REUSE_AUDIT_SCHEMA_PATH = ROOT / "shared-contexts/reuse-audit-schema.json"
 SKILLS_DIR = Path.home() / ".claude/skills"
 FORBIDDEN_TOKENS = ["WebSearch", "AskUserQuestion", "mcp__fetch__fetch", "superpowers:", "Agent({"]
 WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-_]{1,62}$")
@@ -185,8 +189,23 @@ def requirements_lock_path(workflow: str) -> Path:
     return ROOT / "workflows" / workflow / "l2-planning" / "requirements-lock.json"
 
 
+def task_breakdown_path(workflow: str) -> Path:
+    return ROOT / "workflows" / workflow / "l2-planning" / "task_breakdown.json"
+
+
+def implementation_contracts_path(workflow: str) -> Path:
+    return ROOT / "workflows" / workflow / "l2-planning" / "implementation-contracts.json"
+
+
 def requirements_traceability_path(workflow: str) -> Path:
     return ROOT / "workflows" / workflow / "l4-validation" / "requirements-traceability.json"
+
+
+def reuse_audit_path(workflow: str, agent_id: str) -> Path:
+    if agent_id not in {"frontend-squad", "backend-squad"}:
+        raise ControlPlaneError(f"reuse audit path is only defined for development agents, got {agent_id}")
+    slug = "frontend" if agent_id == "frontend-squad" else "backend"
+    return ROOT / "workflows" / workflow / "l3-dev" / slug / "reuse-audit.json"
 
 
 def gate_artifact_dir(workflow: str, gate_state: str, orchestrator: dict[str, Any]) -> Path:
@@ -287,6 +306,167 @@ def validate_skill_contract_mentions(registry: dict[str, Any]) -> list[str]:
     return errors
 
 
+def validate_host_capability_map(contracts: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    capability_map = load_json(HOST_CAPABILITY_MAP_PATH)
+    required_runtimes = {"codex", "claude"}
+    runtimes = capability_map.get("runtimes", {})
+    for runtime_name in required_runtimes:
+        if runtime_name not in runtimes:
+            errors.append(f"host capability map missing runtime profile: {runtime_name}")
+            continue
+        runtime_profile = runtimes[runtime_name]
+        host_capabilities = runtime_profile.get("host_capabilities", {})
+        action_bindings = runtime_profile.get("action_bindings", {})
+        if not host_capabilities:
+            errors.append(f"host capability map runtime {runtime_name} missing host_capabilities")
+        for action_name in contracts.get("abstract_actions", {}):
+            binding = action_bindings.get(action_name)
+            if not binding:
+                errors.append(f"host capability map runtime {runtime_name} missing action binding for {action_name}")
+                continue
+            capability_id = binding.get("capability")
+            if capability_id not in host_capabilities:
+                errors.append(
+                    f"host capability map runtime {runtime_name} action {action_name} references unknown capability {capability_id}"
+                )
+            if "primary" not in binding or "fallback" not in binding:
+                errors.append(f"host capability map runtime {runtime_name} action {action_name} missing primary/fallback")
+    return errors
+
+
+def overlaps_scope(left: str, right: str) -> bool:
+    left_norm = left.rstrip("/")
+    right_norm = right.rstrip("/")
+    left_prefix = left_norm[:-3] if left_norm.endswith("/**") else left_norm
+    right_prefix = right_norm[:-3] if right_norm.endswith("/**") else right_norm
+    return (
+        left_prefix == right_prefix
+        or left_prefix.startswith(right_prefix + "/")
+        or right_prefix.startswith(left_prefix + "/")
+    )
+
+
+def validate_task_breakdown(payload: dict[str, Any], workflow: str, registry: dict[str, Any], orchestrator: dict[str, Any]) -> None:
+    validate_required_keys(payload, TASK_BREAKDOWN_SCHEMA_PATH, task_breakdown_path(workflow).relative_to(ROOT).as_posix())
+    if payload["workflow_id"] != workflow:
+        raise ControlPlaneError("task_breakdown workflow_id mismatch")
+    tasks = payload.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        raise ControlPlaneError("task_breakdown tasks must be a non-empty list")
+    controls = orchestrator.get("development_controls", {})
+    required_principles = set(controls.get("required_principles", []))
+    principles = set(payload.get("development_principles", []))
+    missing_principles = required_principles - principles
+    if missing_principles:
+        raise ControlPlaneError(f"task_breakdown missing required development principles: {', '.join(sorted(missing_principles))}")
+    parallel_execution = payload.get("parallel_execution", {})
+    if parallel_execution.get("default_mode") != "parallel_by_default":
+        raise ControlPlaneError("task_breakdown must declare parallel_execution.default_mode=parallel_by_default")
+    agents = registry_by_id(registry)
+    seen_ids: set[str] = set()
+    parallel_groups: dict[str, list[dict[str, Any]]] = {}
+    for task in tasks:
+        required_keys = load_json(TASK_BREAKDOWN_SCHEMA_PATH)["task_required"]
+        missing = [key for key in required_keys if key not in task]
+        if missing:
+            raise ControlPlaneError(f"task_breakdown task missing keys: {', '.join(missing)}")
+        task_id = task["id"]
+        if task_id in seen_ids:
+            raise ControlPlaneError(f"duplicate task id in task_breakdown: {task_id}")
+        seen_ids.add(task_id)
+        if task["owner"] not in agents:
+            raise ControlPlaneError(f"task {task_id} references unknown owner: {task['owner']}")
+        if task["stage"] != "L3_DEVELOP":
+            raise ControlPlaneError(f"task {task_id} must target L3_DEVELOP")
+        if not isinstance(task["write_scope"], list) or not task["write_scope"]:
+            raise ControlPlaneError(f"task {task_id} must declare a non-empty write_scope list")
+        if not isinstance(task["acceptance_criteria"], list) or not task["acceptance_criteria"]:
+            raise ControlPlaneError(f"task {task_id} must declare acceptance_criteria")
+        if not isinstance(task["dry_reuse_targets"], list) or not task["dry_reuse_targets"]:
+            raise ControlPlaneError(f"task {task_id} must declare dry_reuse_targets")
+        if not isinstance(task["host_capability_needs"], list):
+            raise ControlPlaneError(f"task {task_id} host_capability_needs must be a list")
+        parallel_groups.setdefault(task["parallel_group"], []).append(task)
+    if controls.get("parallel_scope_conflict_check"):
+        for group_name, group_tasks in parallel_groups.items():
+            for index, left in enumerate(group_tasks):
+                for right in group_tasks[index + 1:]:
+                    if left["owner"] == right["owner"]:
+                        continue
+                    if left["id"] in right["depends_on"] or right["id"] in left["depends_on"]:
+                        continue
+                    for left_scope in left["write_scope"]:
+                        for right_scope in right["write_scope"]:
+                            if overlaps_scope(left_scope, right_scope):
+                                raise ControlPlaneError(
+                                    f"parallel write scope conflict in group {group_name}: {left['id']} vs {right['id']}"
+                                )
+
+
+def validate_implementation_contracts(
+    payload: dict[str, Any],
+    workflow: str,
+    registry: dict[str, Any],
+    task_breakdown: dict[str, Any],
+) -> None:
+    validate_required_keys(
+        payload,
+        IMPLEMENTATION_CONTRACTS_SCHEMA_PATH,
+        implementation_contracts_path(workflow).relative_to(ROOT).as_posix(),
+    )
+    if payload["workflow_id"] != workflow:
+        raise ControlPlaneError("implementation contracts workflow_id mismatch")
+    agents = registry_by_id(registry)
+    owned_write_scopes = payload.get("owned_write_scopes", {})
+    if not isinstance(owned_write_scopes, dict) or not owned_write_scopes:
+        raise ControlPlaneError("implementation contracts must define owned_write_scopes")
+    for owner, scopes in owned_write_scopes.items():
+        if owner not in agents:
+            raise ControlPlaneError(f"implementation contracts reference unknown owner: {owner}")
+        if not isinstance(scopes, list) or not scopes:
+            raise ControlPlaneError(f"implementation contracts owner {owner} must have at least one write scope")
+    for task in task_breakdown["tasks"]:
+        owner_scopes = owned_write_scopes.get(task["owner"], [])
+        for task_scope in task["write_scope"]:
+            if not any(overlaps_scope(task_scope, owner_scope) for owner_scope in owner_scopes):
+                raise ControlPlaneError(
+                    f"implementation contracts do not cover task {task['id']} scope {task_scope} for owner {task['owner']}"
+                )
+
+
+def validate_reuse_audit(
+    payload: dict[str, Any],
+    workflow: str,
+    agent_id: str,
+    requirements_hash: str,
+    contracts: dict[str, Any],
+) -> None:
+    validate_required_keys(payload, REUSE_AUDIT_SCHEMA_PATH, reuse_audit_path(workflow, agent_id).relative_to(ROOT).as_posix())
+    if not requirements_hash:
+        raise ControlPlaneError(f"workflow is missing requirements_lock_hash before validating reuse audit for {agent_id}")
+    if payload["workflow_id"] != workflow:
+        raise ControlPlaneError(f"reuse audit workflow_id mismatch for {agent_id}")
+    if payload["agent_id"] != agent_id:
+        raise ControlPlaneError(f"reuse audit agent_id mismatch for {agent_id}")
+    if payload["requirements_lock_hash"] != requirements_hash:
+        raise ControlPlaneError(f"reuse audit requirements_lock_hash mismatch for {agent_id}")
+    if not isinstance(payload["completed_tasks"], list) or not payload["completed_tasks"]:
+        raise ControlPlaneError(f"reuse audit must list completed_tasks for {agent_id}")
+    if not isinstance(payload["scanned_existing_assets"], list) or not payload["scanned_existing_assets"]:
+        raise ControlPlaneError(f"reuse audit must list scanned_existing_assets for {agent_id}")
+    if not isinstance(payload["duplication_risk_checks"], list) or not payload["duplication_risk_checks"]:
+        raise ControlPlaneError(f"reuse audit must record duplication_risk_checks for {agent_id}")
+    if not isinstance(payload["host_capabilities_used"], list):
+        raise ControlPlaneError(f"reuse audit host_capabilities_used must be a list for {agent_id}")
+    known_actions = set(contracts.get("abstract_actions", {}))
+    for item in payload["host_capabilities_used"]:
+        if "action" not in item or "resolution" not in item:
+            raise ControlPlaneError(f"reuse audit host capability entries must include action and resolution for {agent_id}")
+        if item["action"] not in known_actions:
+            raise ControlPlaneError(f"reuse audit references unknown abstract action {item['action']} for {agent_id}")
+
+
 def expected_agent_payload(agent: dict[str, Any]) -> dict[str, Any]:
     return deepcopy(agent)
 
@@ -336,11 +516,19 @@ def doctor() -> list[str]:
     errors.extend(validate_registry_schema(registry))
     errors.extend(validate_orchestrator(registry, orchestrator))
     errors.extend(validate_contracts(registry, contracts))
+    errors.extend(validate_host_capability_map(contracts))
     errors.extend(validate_skill_contract_mentions(registry))
     errors.extend(sync_agent_metadata(check_only=True))
     if errors:
         raise ControlPlaneError("\n".join(errors))
-    return ["registry schema valid", "orchestrator valid", "tool contracts valid", "skill contracts valid", "agent metadata synced"]
+    return [
+        "registry schema valid",
+        "orchestrator valid",
+        "tool contracts valid",
+        "host capability map valid",
+        "skill contracts valid",
+        "agent metadata synced",
+    ]
 
 
 def state_path(workflow: str) -> Path:
@@ -457,7 +645,7 @@ def validate_dependencies(agent: dict[str, Any], contracts: dict[str, Any]) -> N
 
 def pre_agent_run(agent_id: str, workflow: str) -> list[str]:
     validate_workflow_id(workflow)
-    registry, _, contracts = get_context()
+    registry, orchestrator, contracts = get_context()
     agents = registry_by_id(registry)
     if agent_id not in agents:
         raise ControlPlaneError(f"agent {agent_id} not found in registry")
@@ -476,6 +664,21 @@ def pre_agent_run(agent_id: str, workflow: str) -> list[str]:
             )
     validate_inputs(agents[agent_id], workflow)
     validate_dependencies(agents[agent_id], contracts)
+    if state["current_state"] == "L3_DEVELOP":
+        breakdown_path = task_breakdown_path(workflow)
+        implementation_path = implementation_contracts_path(workflow)
+        if not breakdown_path.exists():
+            raise ControlPlaneError(f"missing L3 planning artifact: {breakdown_path.relative_to(ROOT)}")
+        if not implementation_path.exists():
+            raise ControlPlaneError(f"missing L3 planning artifact: {implementation_path.relative_to(ROOT)}")
+        breakdown = load_json(breakdown_path)
+        validate_task_breakdown(breakdown, workflow, registry, orchestrator)
+        contracts_payload = load_json(implementation_path)
+        validate_implementation_contracts(contracts_payload, workflow, registry, breakdown)
+        if agent_id in {"frontend-squad", "backend-squad"}:
+            assigned_tasks = [task for task in breakdown["tasks"] if task["owner"] == agent_id]
+            if not assigned_tasks:
+                raise ControlPlaneError(f"agent {agent_id} has no assigned L3 tasks in task_breakdown.json")
     return [f"pre-run validation passed for {agent_id} in workflow {workflow}"]
 
 
@@ -552,11 +755,21 @@ def git(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.C
 
 
 def post_agent_run(agent_id: str, workflow: str) -> list[str]:
-    _, orchestrator, _ = get_context()
+    registry, orchestrator, contracts = get_context()
     state = load_state(workflow)
     validate_outputs(agent_id, workflow, state["current_state"])
     active_loop = state.get("active_review_loop")
     if state["current_state"] == "L2_PLANNING":
+        breakdown_path = task_breakdown_path(workflow)
+        implementation_path = implementation_contracts_path(workflow)
+        if not breakdown_path.exists():
+            raise ControlPlaneError(f"missing planning artifact: {breakdown_path.relative_to(ROOT)}")
+        if not implementation_path.exists():
+            raise ControlPlaneError(f"missing planning artifact: {implementation_path.relative_to(ROOT)}")
+        breakdown_payload = load_json(breakdown_path)
+        validate_task_breakdown(breakdown_payload, workflow, registry, orchestrator)
+        implementation_payload = load_json(implementation_path)
+        validate_implementation_contracts(implementation_payload, workflow, registry, breakdown_payload)
         lock_path = requirements_lock_path(workflow)
         payload = load_json(lock_path)
         validate_required_keys(payload, REQUIREMENTS_LOCK_SCHEMA_PATH, lock_path.relative_to(ROOT).as_posix())
@@ -565,6 +778,17 @@ def post_agent_run(agent_id: str, workflow: str) -> list[str]:
         write_json(lock_path, payload)
         state["requirements_lock_hash"] = lock_hash
         write_json(state_path(workflow), state)
+    elif state["current_state"] == "L3_DEVELOP" and agent_id in {"frontend-squad", "backend-squad"}:
+        audit_path = reuse_audit_path(workflow, agent_id)
+        if not audit_path.exists():
+            raise ControlPlaneError(f"missing development governance artifact: {audit_path.relative_to(ROOT)}")
+        validate_reuse_audit(
+            load_json(audit_path),
+            workflow,
+            agent_id,
+            state.get("requirements_lock_hash"),
+            contracts,
+        )
     elif state["current_state"] == "L4_VALIDATE":
         traceability_path = requirements_traceability_path(workflow)
         payload = load_json(traceability_path)

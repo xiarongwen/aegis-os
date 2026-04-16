@@ -108,6 +108,51 @@
         "primary": "python3 -m tools.control_plane sync-agent-metadata",
         "fallback": "Refuse to run with stale derived metadata."
       }
+    },
+    "scan_repo_reuse": {
+      "required_inputs": ["requirements-lock.json", "task_scope"],
+      "expected_outputs": ["reuse candidates", "duplication risks", "reuse-audit.json evidence"],
+      "failure_handling": "Do not implement duplicate logic without explicitly recording why reuse was insufficient.",
+      "codex_adapter": {
+        "primary": "Repository inspection with rg, file reads, and host session analysis",
+        "fallback": "Record the blocked reuse scan and stop before duplicating existing capabilities."
+      }
+    },
+    "plan_parallel_work": {
+      "required_inputs": ["requirements-lock.json", "architecture.md"],
+      "expected_outputs": ["task_breakdown.json with owners, write scopes, and parallel groups"],
+      "failure_handling": "Serialize execution instead of parallelizing without clear ownership and boundaries.",
+      "codex_adapter": {
+        "primary": "Host session planning plus control-plane task-breakdown validation",
+        "fallback": "Keep work sequential and mark the parallel split unresolved."
+      }
+    },
+    "freeze_implementation_contracts": {
+      "required_inputs": ["task_breakdown.json", "architecture.md"],
+      "expected_outputs": ["implementation-contracts.json"],
+      "failure_handling": "Block L3 development until shared interfaces and write scopes are frozen.",
+      "codex_adapter": {
+        "primary": "Planning artifact generation plus control-plane validation",
+        "fallback": "Do not start multi-agent development."
+      }
+    },
+    "resolve_host_capability": {
+      "required_inputs": ["abstract_action", "runtime"],
+      "expected_outputs": ["resolved host capability or explicit fallback"],
+      "failure_handling": "Use the documented fallback and record the limitation in reuse-audit.json.",
+      "codex_adapter": {
+        "primary": "shared-contexts/host-capability-map.yml plus host runtime tools/skills",
+        "fallback": "Stay local and explicitly document the reduced execution mode."
+      }
+    },
+    "delegate_specialist_task": {
+      "required_inputs": ["task", "owner", "write_scope"],
+      "expected_outputs": ["specialist execution result"],
+      "failure_handling": "Keep the task local or re-plan the ownership split before continuing.",
+      "codex_adapter": {
+        "primary": "functions.spawn_agent when explicitly allowed, otherwise host-native role routing",
+        "fallback": "Do not claim parallel execution happened if the task stayed local."
+      }
     }
   }
 }

@@ -16,6 +16,8 @@ Use `run_gate_review` to score implementation artifacts against the approved pla
 From `workflows/{id}/l3-dev/`:
 - All frontend and backend source code
 - `workflows/{id}/l2-planning/PRD.md`
+- `workflows/{id}/l2-planning/task_breakdown.json`
+- `workflows/{id}/l2-planning/implementation-contracts.json`
 
 ## Outputs (write to `workflows/{id}/l3-dev/`)
 
@@ -32,7 +34,10 @@ From `workflows/{id}/l3-dev/`:
 4. Security basics such as secret leakage, injection risks, or unsafe file access
 5. Maintainability, modularity, and clarity
 6. PRD alignment without silent requirement drift
-7. If fixes still fail requirement alignment, keep the loop in `changes_requested` or escalate to `blocked`; do not paper over drift with approval.
+7. DRY compliance: no unjustified duplicate logic when existing modules or helpers were available
+8. Parallel ownership discipline: implementation stays inside declared write scopes and shared contracts
+9. Host capability discipline: any host-skill enhancement is recorded through abstract actions and audit artifacts, not hidden runtime-specific magic
+10. If fixes still fail requirement alignment, keep the loop in `changes_requested` or escalate to `blocked`; do not paper over drift with approval.
 
 ## Independence Rule
 

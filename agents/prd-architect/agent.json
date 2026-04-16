@@ -18,6 +18,8 @@
   "contract_actions": [
     "write_plan",
     "lock_requirements",
+    "plan_parallel_work",
+    "freeze_implementation_contracts",
     "run_verification"
   ],
   "inputs": [
@@ -29,14 +31,17 @@
     "workflows/{workflow}/l2-planning/PRD.md",
     "workflows/{workflow}/l2-planning/architecture.md",
     "workflows/{workflow}/l2-planning/task_breakdown.json",
+    "workflows/{workflow}/l2-planning/implementation-contracts.json",
     "workflows/{workflow}/l2-planning/requirements-lock.json"
   ],
   "dependencies": [
     "contract:write_plan",
     "contract:lock_requirements",
+    "contract:plan_parallel_work",
+    "contract:freeze_implementation_contracts",
     "contract:run_verification"
   ],
-  "description": "Transforms research into a buildable PRD, architecture, and implementation task graph.",
+  "description": "Transforms research into a buildable PRD, architecture, a parallel-ready task graph, and frozen implementation contracts.",
   "metrics": {
     "last_score": 7.5,
     "evolution_count": 0,

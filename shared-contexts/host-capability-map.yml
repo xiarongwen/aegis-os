@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "runtimes": {
+    "codex": {
+      "host_capabilities": {
+        "web_research": { "description": "Uses Codex web search and open tooling for source-backed research." },
+        "host_delegation": { "description": "Uses host-native delegation such as spawn_agent when the task is safely separable." },
+        "user_dialog": { "description": "Uses the host session to ask the user for approvals or missing decisions." },
+        "planning_memory": { "description": "Uses the host session to maintain locked plans, task decomposition, and implementation notes." },
+        "repo_verification": { "description": "Uses local shell/test tooling plus control-plane validation for evidence." },
+        "state_control": { "description": "Uses control-plane commands to mutate workflow state and sync metadata." }
+      },
+      "action_bindings": {
+        "search_web": { "capability": "web_research", "primary": "web.search_query", "fallback": "Stop and record the evidence gap." },
+        "fetch_source": { "capability": "web_research", "primary": "web.open", "fallback": "Use another primary source or mark the claim unsupported." },
+        "spawn_agent": { "capability": "host_delegation", "primary": "functions.spawn_agent/functions.send_input/functions.wait_agent", "fallback": "Keep the work local and document why delegation was skipped." },
+        "run_gate_review": { "capability": "repo_verification", "primary": "registered reviewer plus control-plane validation", "fallback": "Do not advance the gate." },
+        "ask_user": { "capability": "user_dialog", "primary": "host assistant message", "fallback": "Pause the workflow." },
+        "write_plan": { "capability": "planning_memory", "primary": "host session planning notes", "fallback": "Reduce scope and stop before unsafe implementation." },
+        "lock_requirements": { "capability": "state_control", "primary": "control-plane requirements lock hashing", "fallback": "Do not enter L3." },
+        "validate_requirements_traceability": { "capability": "repo_verification", "primary": "QA artifact plus control-plane schema check", "fallback": "Block release." },
+        "run_test_driven_cycle": { "capability": "repo_verification", "primary": "repository test tooling and explicit red-green-refactor", "fallback": "Document why deterministic tests are blocked." },
+        "run_verification": { "capability": "repo_verification", "primary": "tests, static checks, and doctor", "fallback": "Surface exact verification gaps." },
+        "write_state": { "capability": "state_control", "primary": "python3 -m tools.control_plane write-state", "fallback": "Keep the previous committed state." },
+        "sync_agent_metadata": { "capability": "state_control", "primary": "python3 -m tools.control_plane sync-agent-metadata", "fallback": "Refuse to run with stale metadata." },
+        "scan_repo_reuse": { "capability": "planning_memory", "primary": "host session repo scan using rg and local inspection", "fallback": "Create a blocked reuse note instead of assuming duplication is acceptable." },
+        "plan_parallel_work": { "capability": "planning_memory", "primary": "host session task decomposition with explicit ownership/write scopes", "fallback": "Serialize execution instead of parallelizing unsafely." },
+        "freeze_implementation_contracts": { "capability": "state_control", "primary": "planning artifacts plus control-plane validation", "fallback": "Do not start parallel development." },
+        "resolve_host_capability": { "capability": "host_delegation", "primary": "host skill/tool discovery against the runtime map", "fallback": "Use a documented local fallback and record it in reuse-audit.json." },
+        "delegate_specialist_task": { "capability": "host_delegation", "primary": "host-native delegation with scoped ownership", "fallback": "Keep the task local or re-plan the split." }
+      }
+    },
+    "claude": {
+      "host_capabilities": {
+        "web_research": { "description": "Uses Claude host search/browser capabilities when available." },
+        "host_delegation": { "description": "Uses Claude host-native delegation or role-switching when available." },
+        "user_dialog": { "description": "Uses the host session to ask for approvals or missing decisions." },
+        "planning_memory": { "description": "Uses the host session for locked plans and implementation notes." },
+        "repo_verification": { "description": "Uses local shell/test tooling plus control-plane validation." },
+        "state_control": { "description": "Uses control-plane commands to mutate workflow state and sync metadata." }
+      },
+      "action_bindings": {
+        "search_web": { "capability": "web_research", "primary": "host search/browser capability", "fallback": "Stop and record the evidence gap." },
+        "fetch_source": { "capability": "web_research", "primary": "host browser/source fetch capability", "fallback": "Use another source or mark the claim unsupported." },
+        "spawn_agent": { "capability": "host_delegation", "primary": "host-native sub-agent/delegation capability", "fallback": "Keep the work local and record why delegation was skipped." },
+        "run_gate_review": { "capability": "repo_verification", "primary": "registered reviewer plus control-plane validation", "fallback": "Do not advance the gate." },
+        "ask_user": { "capability": "user_dialog", "primary": "host assistant message", "fallback": "Pause the workflow." },
+        "write_plan": { "capability": "planning_memory", "primary": "host session planning notes", "fallback": "Reduce scope and stop before unsafe implementation." },
+        "lock_requirements": { "capability": "state_control", "primary": "control-plane requirements lock hashing", "fallback": "Do not enter L3." },
+        "validate_requirements_traceability": { "capability": "repo_verification", "primary": "QA artifact plus control-plane schema check", "fallback": "Block release." },
+        "run_test_driven_cycle": { "capability": "repo_verification", "primary": "repository test tooling and explicit red-green-refactor", "fallback": "Document why deterministic tests are blocked." },
+        "run_verification": { "capability": "repo_verification", "primary": "tests, static checks, and doctor", "fallback": "Surface exact verification gaps." },
+        "write_state": { "capability": "state_control", "primary": "python3 -m tools.control_plane write-state", "fallback": "Keep the previous committed state." },
+        "sync_agent_metadata": { "capability": "state_control", "primary": "python3 -m tools.control_plane sync-agent-metadata", "fallback": "Refuse to run with stale metadata." },
+        "scan_repo_reuse": { "capability": "planning_memory", "primary": "host session repo scan using local inspection", "fallback": "Create a blocked reuse note instead of assuming duplication is acceptable." },
+        "plan_parallel_work": { "capability": "planning_memory", "primary": "host session task decomposition with explicit ownership/write scopes", "fallback": "Serialize execution instead of parallelizing unsafely." },
+        "freeze_implementation_contracts": { "capability": "state_control", "primary": "planning artifacts plus control-plane validation", "fallback": "Do not start parallel development." },
+        "resolve_host_capability": { "capability": "host_delegation", "primary": "host skill/tool discovery against the runtime map", "fallback": "Use a documented local fallback and record it in reuse-audit.json." },
+        "delegate_specialist_task": { "capability": "host_delegation", "primary": "host-native delegation with scoped ownership", "fallback": "Keep the task local or re-plan the split." }
+      }
+    }
+  }
+}

@@ -16,6 +16,8 @@ Use `run_gate_review` to perform the security gate and `run_verification` to ens
 From `workflows/{id}/l3-dev/`:
 - All source code
 - Dependency manifests
+- `workflows/{id}/l2-planning/task_breakdown.json`
+- `workflows/{id}/l2-planning/implementation-contracts.json`
 
 ## Outputs (write to `workflows/{id}/l3-dev/`)
 
@@ -32,6 +34,8 @@ From `workflows/{id}/l3-dev/`:
 4. AuthN and AuthZ checks
 5. Dependency risk review
 6. Data exposure in logs or errors
+7. Unsafe parallel handoffs such as shared mutable files or undocumented interface changes
+8. Host-capability usage that bypasses the declared contract layer or introduces unreproducible execution paths
 
 ## Veto Power
 

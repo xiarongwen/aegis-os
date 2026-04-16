@@ -265,6 +265,12 @@ def prompt_for_agent(
     requirements_lock = workflow_root / "l2-planning" / "requirements-lock.json"
     if requirements_lock.exists():
         lines.append(f"- `{requirements_lock}`")
+    task_breakdown = workflow_root / "l2-planning" / "task_breakdown.json"
+    implementation_contracts = workflow_root / "l2-planning" / "implementation-contracts.json"
+    if task_breakdown.exists():
+        lines.append(f"- `{task_breakdown}`")
+    if implementation_contracts.exists():
+        lines.append(f"- `{implementation_contracts}`")
     lines.extend(
         [
             "",
@@ -274,7 +280,9 @@ def prompt_for_agent(
             "3. Write every required artifact declared in the registry to the workflow directory.",
             "4. For review gates, emit review-loop artifacts and only create `review-passed.json` on LGTM.",
             "5. If you are in a fix loop, answer prior findings in `fix-response-round-N.md` instead of rewriting the direction.",
-            "6. Do not advance workflow state yourself. Stop after writing artifacts.",
+            "6. In L3, obey DRY-first reuse checks, owned write scopes, and implementation contracts before writing code.",
+            "7. In L3, use host skills/tools only through the mapped abstract actions and record that usage in `reuse-audit.json`.",
+            "8. Do not advance workflow state yourself. Stop after writing artifacts.",
             "",
             "Now execute your stage and write the required files.",
         ]

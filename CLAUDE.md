@@ -13,7 +13,9 @@
 5. **Strict Gated Flow**: L1 → L2 → L3 → L4 → L5, with independent gate reviewers.
 6. **Review Is A Loop**: Gates close through `review -> fix -> re-review -> ... -> LGTM`, not a one-shot checkbox.
 7. **Requirement Locking**: Planning emits a frozen `requirements-lock.json`; every stage from L3 onward must match its hash and QA must produce traceability evidence.
-8. **Conservative Evolution**: Nightly evolution only keeps changes that improve score and still pass doctor.
+8. **DRY-First Parallel Development**: L3 requires `task_breakdown.json`, `implementation-contracts.json`, owned write scopes, and per-agent `reuse-audit.json` before development is considered valid.
+9. **Host Capability Enhancement**: Agents may enhance themselves with host-native skills/tools only through abstract contracts plus `shared-contexts/host-capability-map.yml`.
+10. **Conservative Evolution**: Nightly evolution only keeps changes that improve score and still pass doctor.
 
 ## Quick Reference
 
@@ -41,7 +43,9 @@ If a gate exceeds retry policy or a blocking security finding is detected, the w
 - Standard-machine-readable config in `.aegis/core/orchestrator.yml`
 - Registry schema validation through `.aegis/core/registry.schema.json`
 - Tool contract validation through `shared-contexts/tool-contracts.yml`
+- Host capability binding validation through `shared-contexts/host-capability-map.yml`
 - Requirement-lock schema validation and drift protection from L3 onward
+- Task-breakdown, implementation-contract, and reuse-audit validation for L3 execution
 - Derived metadata parity between registry and every `agents/*/agent.json`
 - Independent reviewer validation for every gate
 - Review-loop artifact validation for `review-loop-status.json`, `review-round-N.md`, and `review-passed.json`

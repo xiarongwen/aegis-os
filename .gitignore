@@ -7,7 +7,6 @@ workflows/*/node_modules/
 workflows/*/__pycache__/
 workflows/*/.env
 workflows/*/.env.local
-
 # Evolution worktrees and temp files
 *.evolution-result.json
 /tmp/aegis-evolution/
@@ -28,6 +27,7 @@ Thumbs.db
 
 # Dependencies
 node_modules/
+
 __pycache__/
 *.pyc
 

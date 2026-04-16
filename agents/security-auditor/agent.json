@@ -1,7 +1,7 @@
 {
   "id": "security-auditor",
   "name": "Security Audit Agent",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "entrypoint": "agents/security-auditor/SKILL.md",
   "enabled": true,
   "evolution": true,
@@ -23,6 +23,8 @@
     "run_verification"
   ],
   "inputs": [
+    "workflows/{workflow}/l2-planning/task_breakdown.json",
+    "workflows/{workflow}/l2-planning/implementation-contracts.json",
     "workflows/{workflow}/l3-dev/"
   ],
   "outputs": [
@@ -35,7 +37,7 @@
     "contract:run_gate_review",
     "contract:run_verification"
   ],
-  "description": "Performs secure-code review and enforces the security veto gate.",
+  "description": "Performs secure-code review and enforces the security veto gate across parallel development outputs and host-enhanced execution.",
   "metrics": {
     "last_score": 8.5,
     "evolution_count": 0,

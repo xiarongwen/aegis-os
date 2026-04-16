@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "workflow_id",
+    "created_at",
+    "planning_mode",
+    "development_principles",
+    "parallel_execution",
+    "tasks"
+  ],
+  "task_required": [
+    "id",
+    "title",
+    "owner",
+    "stage",
+    "depends_on",
+    "parallel_group",
+    "write_scope",
+    "acceptance_criteria",
+    "dry_reuse_targets",
+    "host_capability_needs"
+  ]
+}

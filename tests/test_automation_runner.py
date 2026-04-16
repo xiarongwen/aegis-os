@@ -36,7 +36,70 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
             target.mkdir(parents=True, exist_ok=True)
             (target / "PRD.md").write_text("# PRD\n", encoding="utf-8")
             (target / "architecture.md").write_text("# Architecture\n", encoding="utf-8")
-            control_plane.write_json(target / "task_breakdown.json", {"tasks": []})
+            control_plane.write_json(
+                target / "task_breakdown.json",
+                {
+                    "version": "1.0.0",
+                    "workflow_id": workflow_id,
+                    "created_at": control_plane.utc_now(),
+                    "planning_mode": "l3_parallel_execution",
+                    "development_principles": [
+                        "dry_first",
+                        "parallel_by_default",
+                        "contract_before_code",
+                        "owned_write_scope",
+                        "host_capability_enhancement",
+                    ],
+                    "parallel_execution": {
+                        "default_mode": "parallel_by_default",
+                        "max_parallel_agents": 2,
+                    },
+                    "tasks": [
+                        {
+                            "id": "FE-1",
+                            "title": "Build frontend shell",
+                            "owner": "frontend-squad",
+                            "stage": "L3_DEVELOP",
+                            "depends_on": [],
+                            "parallel_group": "ui-api",
+                            "write_scope": ["workflows/{workflow}/l3-dev/frontend/**".replace("{workflow}", workflow_id)],
+                            "acceptance_criteria": ["UI renders a bounded shell"],
+                            "dry_reuse_targets": ["workflows/{workflow}/l3-dev/frontend".replace("{workflow}", workflow_id)],
+                            "host_capability_needs": ["resolve_host_capability", "scan_repo_reuse"],
+                        },
+                        {
+                            "id": "BE-1",
+                            "title": "Build backend shell",
+                            "owner": "backend-squad",
+                            "stage": "L3_DEVELOP",
+                            "depends_on": [],
+                            "parallel_group": "ui-api",
+                            "write_scope": ["workflows/{workflow}/l3-dev/backend/**".replace("{workflow}", workflow_id)],
+                            "acceptance_criteria": ["API shell responds"],
+                            "dry_reuse_targets": ["workflows/{workflow}/l3-dev/backend".replace("{workflow}", workflow_id)],
+                            "host_capability_needs": ["resolve_host_capability", "scan_repo_reuse"],
+                        },
+                    ],
+                },
+            )
+            control_plane.write_json(
+                target / "implementation-contracts.json",
+                {
+                    "version": "1.0.0",
+                    "workflow_id": workflow_id,
+                    "generated_at": control_plane.utc_now(),
+                    "contract_version": "1.0.0",
+                    "shared_interfaces": [],
+                    "owned_write_scopes": {
+                        "frontend-squad": ["workflows/{workflow}/l3-dev/frontend/**".replace("{workflow}", workflow_id)],
+                        "backend-squad": ["workflows/{workflow}/l3-dev/backend/**".replace("{workflow}", workflow_id)],
+                    },
+                    "integration_rules": {
+                        "required_before_parallel": ["contract_before_code"],
+                    },
+                    "change_control": {"owner": "user", "mode": "explicit_approval"},
+                },
+            )
             control_plane.write_json(
                 target / "requirements-lock.json",
                 {
