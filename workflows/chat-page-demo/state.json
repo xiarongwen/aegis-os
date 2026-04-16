@@ -1,9 +1,10 @@
 {
   "workflow_id": "chat-page-demo",
-  "current_state": "L1_RESEARCH",
+  "current_state": "L1_REVIEW",
   "started_at": "2026-04-16T08:24:15Z",
   "history": [
-    {"from": "INIT", "to": "L1_RESEARCH", "at": "2026-04-16T08:25:00Z", "agent": "orchestrator"}
+    {"from": "INIT", "to": "L1_RESEARCH", "at": "2026-04-16T08:25:00Z", "agent": "orchestrator"},
+    {"from": "L1_RESEARCH", "to": "L1_REVIEW", "at": "2026-04-16T08:31:52Z", "agent": "orchestrator"}
   ],
   "blockers": [],
   "retries": {},
