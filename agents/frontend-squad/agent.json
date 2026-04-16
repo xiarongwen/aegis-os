@@ -1,0 +1,16 @@
+{
+  "id": "frontend-squad",
+  "name": "Frontend Development Squad",
+  "version": "1.0.0",
+  "entrypoint": "agents/frontend-squad/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "inputs": ["PRD.md", "architecture.md", "task_breakdown.json"],
+  "outputs": ["frontend/"],
+  "metrics": {
+    "last_score": 7.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  },
+  "description": "Implements frontend code with strict TDD and plan-first discipline"
+}

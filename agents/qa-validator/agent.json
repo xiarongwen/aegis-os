@@ -1,0 +1,16 @@
+{
+  "id": "qa-validator",
+  "name": "QA Validation Agent",
+  "version": "1.0.0",
+  "entrypoint": "agents/qa-validator/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "inputs": ["l3-dev/", "l4-validation/"],
+  "outputs": ["test-report.md", "qa-signoff.json", "review-passed.json"],
+  "metrics": {
+    "last_score": 8.0,
+    "evolution_count": 0,
+    "rollback_count": 0
+  },
+  "description": "Validates test execution, coverage, and acceptance criteria compliance"
+}

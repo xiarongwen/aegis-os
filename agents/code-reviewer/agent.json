@@ -1,0 +1,16 @@
+{
+  "id": "code-reviewer",
+  "name": "Code Review Agent",
+  "version": "1.0.0",
+  "entrypoint": "agents/code-reviewer/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "inputs": ["l3-dev/"],
+  "outputs": ["code-review-report.md", "review-passed.json"],
+  "metrics": {
+    "last_score": 8.0,
+    "evolution_count": 0,
+    "rollback_count": 0
+  },
+  "description": "Independent code quality reviewer. Must never be the same instance as the development agent."
+}

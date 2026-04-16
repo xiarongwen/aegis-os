@@ -1,0 +1,14 @@
+{
+  "id": "orchestrator",
+  "name": "AEGIS Orchestrator",
+  "version": "1.0.0",
+  "entrypoint": "agents/orchestrator/SKILL.md",
+  "enabled": true,
+  "evolution": false,
+  "description": "Git-native workflow engine that drives the multi-agent system from L0 to L5",
+  "metrics": {
+    "last_score": 10.0,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

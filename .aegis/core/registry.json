@@ -1,0 +1,103 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-04-16",
+  "agents": [
+    {
+      "id": "orchestrator",
+      "name": "AEGIS Orchestrator",
+      "entrypoint": "agents/orchestrator/SKILL.md",
+      "enabled": true,
+      "evolution": false,
+      "description": "Core workflow engine and state machine driver"
+    },
+    {
+      "id": "market-research",
+      "name": "Market Research Agent",
+      "entrypoint": "agents/market-research/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "dependencies": ["agent-browser"],
+      "inputs": ["product_idea", "target_market"],
+      "outputs": ["market_report.md", "competitive_analysis.md"],
+      "description": "Conducts market research and competitive analysis"
+    },
+    {
+      "id": "prd-architect",
+      "name": "PRD Architect Agent",
+      "entrypoint": "agents/prd-architect/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "inputs": ["market_report.md"],
+      "outputs": ["PRD.md", "architecture.md", "task_breakdown.json"],
+      "description": "Transforms research into PRD and technical architecture"
+    },
+    {
+      "id": "frontend-squad",
+      "name": "Frontend Development Squad",
+      "entrypoint": "agents/frontend-squad/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "inputs": ["PRD.md", "architecture.md"],
+      "outputs": ["frontend/"],
+      "description": "Implements frontend code with TDD"
+    },
+    {
+      "id": "backend-squad",
+      "name": "Backend Development Squad",
+      "entrypoint": "agents/backend-squad/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "inputs": ["PRD.md", "architecture.md"],
+      "outputs": ["backend/"],
+      "description": "Implements backend code with TDD"
+    },
+    {
+      "id": "code-reviewer",
+      "name": "Code Review Agent",
+      "entrypoint": "agents/code-reviewer/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "inputs": ["l3-dev/"],
+      "outputs": ["code-review-report.md"],
+      "description": "Independent code quality and architecture reviewer"
+    },
+    {
+      "id": "security-auditor",
+      "name": "Security Audit Agent",
+      "entrypoint": "agents/security-auditor/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "inputs": ["l3-dev/"],
+      "outputs": ["security-scan-report.md"],
+      "description": "Performs security scanning and compliance checks"
+    },
+    {
+      "id": "qa-validator",
+      "name": "QA Validation Agent",
+      "entrypoint": "agents/qa-validator/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "inputs": ["l3-dev/", "l4-validation/"],
+      "outputs": ["test-report.md", "qa-signoff.json"],
+      "description": "Validates tests, coverage, and acceptance criteria"
+    },
+    {
+      "id": "deploy-sre",
+      "name": "Deploy SRE Agent",
+      "entrypoint": "agents/deploy-sre/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "inputs": ["l4-validation/"],
+      "outputs": ["deployment-log.md", "rollback-plan.md"],
+      "description": "Manages deployment and release engineering"
+    },
+    {
+      "id": "darwin-skill",
+      "name": "Darwin Evolution Engine",
+      "entrypoint": "agents/darwin-skill/SKILL.md",
+      "enabled": true,
+      "evolution": false,
+      "description": "Optimizes other agents using hill-climbing and git ratchet"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "security-auditor",
+  "name": "Security Audit Agent",
+  "version": "1.0.0",
+  "entrypoint": "agents/security-auditor/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "inputs": ["l3-dev/"],
+  "outputs": ["security-scan-report.md", "review-passed.json"],
+  "metrics": {
+    "last_score": 8.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  },
+  "description": "Security-focused reviewer. Blocks on any high or critical severity finding."
+}

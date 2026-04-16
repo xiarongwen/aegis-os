@@ -1,0 +1,100 @@
+---
+aegis_version: "1.0.0"
+name: AEGIS Orchestrator
+description: Git-Native Multi-Agent Operating System for Enterprise AI Development
+---
+
+# State Machine
+states:
+  - INIT
+  - L1_RESEARCH
+  - L1_REVIEW
+  - L2_PLANNING
+  - L2_REVIEW
+  - L3_DEVELOP
+  - L3_CODE_REVIEW
+  - L3_SECURITY_AUDIT
+  - L4_VALIDATE
+  - L4_REVIEW
+  - L5_DEPLOY
+  - L5_REVIEW
+  - DONE
+  - BLOCKED
+
+transitions:
+  INIT: L1_RESEARCH
+  L1_RESEARCH: L1_REVIEW
+  L1_REVIEW:
+    pass: L2_PLANNING
+    fail: L1_RESEARCH
+    max_retries: 3
+  L2_PLANNING: L2_REVIEW
+  L2_REVIEW:
+    pass: L3_DEVELOP
+    fail: L2_PLANNING
+    max_retries: 3
+  L3_DEVELOP: L3_CODE_REVIEW
+  L3_CODE_REVIEW:
+    pass: L3_SECURITY_AUDIT
+    fail: L3_DEVELOP
+    max_retries: 3
+  L3_SECURITY_AUDIT:
+    pass: L4_VALIDATE
+    fail: BLOCKED
+    max_retries: 0
+  L4_VALIDATE: L4_REVIEW
+  L4_REVIEW:
+    pass: L5_DEPLOY
+    fail: L4_VALIDATE
+    max_retries: 3
+  L5_DEPLOY: L5_REVIEW
+  L5_REVIEW:
+    pass: DONE
+    fail: BLOCKED
+    max_retries: 0
+
+# Gate Configuration
+gates:
+  L1_REVIEW:
+    reviewer: research-qa-agent
+    rubric: shared-contexts/review-rubric-8dim.json
+    min_score: 8.0
+  L2_REVIEW:
+    reviewer: prd-architect
+    rubric: shared-contexts/review-rubric-8dim.json
+    min_score: 8.0
+  L3_CODE_REVIEW:
+    reviewer: code-reviewer
+    rubric: shared-contexts/review-rubric-8dim.json
+    min_score: 8.0
+  L3_SECURITY_AUDIT:
+    reviewer: security-auditor
+    rubric: shared-contexts/review-rubric-8dim.json
+    min_score: 9.0
+  L4_REVIEW:
+    reviewer: qa-validator
+    rubric: shared-contexts/review-rubric-8dim.json
+    min_score: 8.5
+  L5_REVIEW:
+    reviewer: deploy-sre
+    rubric: shared-contexts/review-rubric-8dim.json
+    min_score: 9.0
+
+# Directory Rules
+directory_rules:
+  market-research:    { read: [], write: [workflows/{workflow}/l1-intelligence] }
+  prd-architect:      { read: [workflows/{workflow}/l1-intelligence], write: [workflows/{workflow}/l2-planning] }
+  frontend-squad:     { read: [workflows/{workflow}/l2-planning], write: [workflows/{workflow}/l3-dev/frontend] }
+  backend-squad:      { read: [workflows/{workflow}/l2-planning], write: [workflows/{workflow}/l3-dev/backend] }
+  code-reviewer:      { read: [workflows/{workflow}/l3-dev], write: [workflows/{workflow}/l3-dev/code-review-report.md] }
+  security-auditor:   { read: [workflows/{workflow}/l3-dev], write: [workflows/{workflow}/l3-dev/security-scan-report.md] }
+  qa-validator:       { read: [workflows/{workflow}/l3-dev, workflows/{workflow}/l4-validation], write: [workflows/{workflow}/l4-validation] }
+  deploy-sre:         { read: [workflows/{workflow}/l4-validation], write: [workflows/{workflow}/l5-release] }
+
+# Evolution Configuration
+evolution:
+  schedule: "0 2 * * *"
+  engine: agents/darwin-skill/SKILL.md
+  max_rounds_per_agent: 3
+  ratchet: true
+  auto_commit: true

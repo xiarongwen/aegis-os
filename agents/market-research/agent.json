@@ -1,0 +1,17 @@
+{
+  "id": "market-research",
+  "name": "Market Research Agent",
+  "version": "1.0.0",
+  "entrypoint": "agents/market-research/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "dependencies": ["agent-browser", "web-search"],
+  "inputs": ["product_idea", "target_market"],
+  "outputs": ["market_report.md", "competitive_analysis.md", "tech_feasibility.md"],
+  "metrics": {
+    "last_score": 7.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  },
+  "description": "Conducts rigorous market research and competitive analysis with verifiable data sources"
+}

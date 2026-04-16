@@ -1,0 +1,16 @@
+{
+  "id": "backend-squad",
+  "name": "Backend Development Squad",
+  "version": "1.0.0",
+  "entrypoint": "agents/backend-squad/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "inputs": ["PRD.md", "architecture.md", "task_breakdown.json"],
+  "outputs": ["backend/"],
+  "metrics": {
+    "last_score": 7.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  },
+  "description": "Implements backend APIs, data models, and business logic with TDD"
+}

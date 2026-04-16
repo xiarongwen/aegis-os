@@ -1,0 +1,16 @@
+{
+  "id": "prd-architect",
+  "name": "PRD Architect Agent",
+  "version": "1.0.0",
+  "entrypoint": "agents/prd-architect/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "inputs": ["market_report.md", "competitive_analysis.md", "tech_feasibility.md"],
+  "outputs": ["PRD.md", "architecture.md", "task_breakdown.json"],
+  "metrics": {
+    "last_score": 7.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  },
+  "description": "Transforms market research into detailed PRD, technical architecture, and executable task breakdown"
+}

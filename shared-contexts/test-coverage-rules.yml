@@ -1,0 +1,20 @@
+aegis_test_coverage_rules:
+  version: "1.0.0"
+  minimum_overall_coverage: 80
+  minimum_unit_coverage: 70
+  minimum_critical_path_coverage: 90
+  critical_path_patterns:
+    - "*/auth*"
+    - "*/payment*"
+    - "*/api/"
+  forbidden_in_tests:
+    - "hardcoded_password"
+    - "localhost:3000"  # except in test config files
+    - "setTimeout("      # use fake timers
+  required_test_types:
+    - unit
+    - integration
+  e2e_required_for:
+    - "user_login"
+    - "checkout_flow"
+    - "critical_business_transaction"
