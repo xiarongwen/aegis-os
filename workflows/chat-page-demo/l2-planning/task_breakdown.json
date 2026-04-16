@@ -1,0 +1,142 @@
+[
+  {
+    "id": "T1",
+    "title": "Initialize monorepo and CI pipeline",
+    "owner": "frontend-squad",
+    "estimated_hours": 4,
+    "dependencies": []
+  },
+  {
+    "id": "T2",
+    "title": "Set up Vite + React + TypeScript + Tailwind frontend scaffold",
+    "owner": "frontend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T1"]
+  },
+  {
+    "id": "T3",
+    "title": "Set up Node.js + Express + Socket.io backend scaffold",
+    "owner": "backend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T1"]
+  },
+  {
+    "id": "T4",
+    "title": "Configure PostgreSQL and Prisma schema",
+    "owner": "backend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T3"]
+  },
+  {
+    "id": "T5",
+    "title": "Implement REST API for conversations and messages",
+    "owner": "backend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T4"]
+  },
+  {
+    "id": "T6",
+    "title": "Implement Socket.io real-time events (join/leave, message broadcast, typing)",
+    "owner": "backend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T5"]
+  },
+  {
+    "id": "T7",
+    "title": "Build ConversationSidebar component with search stub",
+    "owner": "frontend-squad",
+    "estimated_hours": 6,
+    "dependencies": ["T2"]
+  },
+  {
+    "id": "T8",
+    "title": "Build MessageList with virtualization and infinite scroll",
+    "owner": "frontend-squad",
+    "estimated_hours": 10,
+    "dependencies": ["T2"]
+  },
+  {
+    "id": "T9",
+    "title": "Build Composer with auto-resize, send, and optimistic updates",
+    "owner": "frontend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T2"]
+  },
+  {
+    "id": "T10",
+    "title": "Integrate frontend with REST and Socket.io APIs",
+    "owner": "frontend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T6", "T7", "T8", "T9"]
+  },
+  {
+    "id": "T11",
+    "title": "Implement AI SSE streaming endpoint and frontend rendering",
+    "owner": "backend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T6"]
+  },
+  {
+    "id": "T12",
+    "title": "Consume AI SSE stream in frontend with markdown rendering",
+    "owner": "frontend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T10", "T11"]
+  },
+  {
+    "id": "T13",
+    "title": "Implement threaded replies (backend + frontend thread pane)",
+    "owner": "frontend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T10"]
+  },
+  {
+    "id": "T14",
+    "title": "Implement emoji reactions API and UI",
+    "owner": "frontend-squad",
+    "estimated_hours": 6,
+    "dependencies": ["T10"]
+  },
+  {
+    "id": "T15",
+    "title": "Add message search API and frontend highlighting",
+    "owner": "frontend-squad",
+    "estimated_hours": 6,
+    "dependencies": ["T10"]
+  },
+  {
+    "id": "T16",
+    "title": "Implement dark/light theme and CSS variable theming",
+    "owner": "frontend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T2"]
+  },
+  {
+    "id": "T17",
+    "title": "Add Docker Compose setup for local/demo deployment",
+    "owner": "backend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T6"]
+  },
+  {
+    "id": "T18",
+    "title": "Write E2E smoke tests for core chat flows",
+    "owner": "frontend-squad",
+    "estimated_hours": 8,
+    "dependencies": ["T12", "T13", "T14"]
+  },
+  {
+    "id": "T19",
+    "title": "Performance profiling and accessibility audit fixes",
+    "owner": "frontend-squad",
+    "estimated_hours": 6,
+    "dependencies": ["T18"]
+  },
+  {
+    "id": "T20",
+    "title": "Security hardening (rate limit, input sanitization, Helmet)",
+    "owner": "backend-squad",
+    "estimated_hours": 6,
+    "dependencies": ["T6"]
+  }
+]

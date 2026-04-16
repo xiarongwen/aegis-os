@@ -1,12 +1,28 @@
 {
   "workflow_id": "chat-page-demo",
-  "current_state": "L1_REVIEW",
+  "current_state": "L2_PLANNING",
   "started_at": "2026-04-16T08:24:15Z",
   "history": [
-    {"from": "INIT", "to": "L1_RESEARCH", "at": "2026-04-16T08:25:00Z", "agent": "orchestrator"},
-    {"from": "L1_RESEARCH", "to": "L1_REVIEW", "at": "2026-04-16T08:31:52Z", "agent": "orchestrator"}
+    {
+      "from": "INIT",
+      "to": "L1_RESEARCH",
+      "at": "2026-04-16T08:25:00Z",
+      "agent": "orchestrator"
+    },
+    {
+      "from": "L1_RESEARCH",
+      "to": "L1_REVIEW",
+      "at": "2026-04-16T08:31:52Z",
+      "agent": "orchestrator"
+    },
+    {
+      "from": "L1_REVIEW",
+      "to": "L2_PLANNING",
+      "at": "2026-04-16T08:34:44Z",
+      "agent": "orchestrator"
+    }
   ],
   "blockers": [],
   "retries": {},
-  "requirements_lock_hash": null
+  "requirements_lock_hash": "sha256:acda2abc116a10900e0af5bc2f8f6c45c5a3e69cced2573dbe4af901fc80540a"
 }
