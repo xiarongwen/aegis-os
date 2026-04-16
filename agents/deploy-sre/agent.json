@@ -6,11 +6,11 @@
   "enabled": true,
   "evolution": true,
   "inputs": ["l4-validation/"],
-  "outputs": ["deployment-log.md", "rollback-plan.md", "monitoring-checklist.md", "review-passed.json"],
+  "outputs": ["deployment-plan.md", "deployment-log.md", "rollback-plan.md", "monitoring-checklist.md", "post-deploy-security-scan-report.md", "review-passed.json"],
   "metrics": {
     "last_score": 8.5,
     "evolution_count": 0,
     "rollback_count": 0
   },
-  "description": "Manages deployment execution, rollback planning, and post-release monitoring"
+  "description": "Deploys to target servers, runs post-deploy security scans, and manages rollback planning"
 }

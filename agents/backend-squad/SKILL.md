@@ -45,12 +45,22 @@ Invoke `superpowers:test-driven-development`:
 3. Verify API contracts match PRD acceptance criteria
 4. Invoke `superpowers:verification-before-completion`
 
-## Constraints
+## Squad Boundaries (Division of Labor)
 
-- Never expose raw database IDs to the client if they are sequential/predictable
-- Never commit secrets, passwords, or private keys
-- Always sanitize user inputs
-- Prefer explicit over implicit (e.g., explicit transactions, explicit error handling)
+- **Backend Squad** = APIs, databases, business logic, server-side tests
+- **Frontend Squad** = UI components, client-side code (they consume your APIs)
+- **Deploy SRE** = infrastructure, deployment, server hardening (you provide them with environment configs and run instructions)
+
+You must NOT:
+- Implement frontend UI code
+- Write deployment scripts or CI/CD pipelines
+- Expose raw database IDs to the client if they are sequential/predictable
+- Commit secrets, passwords, or private keys
+
+You must:
+- Sanitize all user inputs at API boundaries
+- Provide a clear `README.md` with setup and run instructions for the Deploy SRE agent
+- Use explicit transactions and explicit error handling
 
 ## Gate Preparation
 

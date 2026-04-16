@@ -45,11 +45,20 @@ Before signaling completion:
 3. Run the linter; zero errors
 4. Use `superpowers:verification-before-completion`
 
-## Constraints
+## Squad Boundaries (Division of Labor)
 
-- Do NOT implement backend logic
-- Do NOT hardcode API URLs without reading architecture.md
-- Do NOT skip tests for "simple" changes
+- **Frontend Squad** = user interface, browser/client-side code, component tests, E2E tests
+- **Backend Squad** = APIs, databases, business logic (you consume their APIs)
+- **Deploy SRE** = server provisioning, deployment execution, post-deploy scans (you hand off build artifacts to them)
+
+You must NOT:
+- Implement backend logic
+- Write deployment scripts or CI/CD pipelines
+- Hardcode API URLs without reading architecture.md
+- Skip tests for "simple" changes
+
+You must:
+- Provide a clear `README.md` with build instructions for the Deploy SRE agent
 - Every component must have a corresponding test file
 
 ## Gate Preparation

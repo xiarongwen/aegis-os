@@ -79,6 +79,10 @@ gates:
     reviewer: deploy-sre
     rubric: shared-contexts/review-rubric-8dim.json
     min_score: 9.0
+    requirements:
+      - rollback_plan_exists: true
+      - post_deploy_security_scan_completed: true
+      - no_critical_server_findings: true
 
 # Directory Rules
 directory_rules:
