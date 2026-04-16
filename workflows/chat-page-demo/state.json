@@ -1,6 +1,6 @@
 {
   "workflow_id": "chat-page-demo",
-  "current_state": "L2_REVIEW",
+  "current_state": "L3_DEVELOP",
   "started_at": "2026-04-16T08:24:15Z",
   "history": [
     {"from": "INIT", "to": "L1_RESEARCH", "at": "2026-04-16T08:25:00Z", "agent": "orchestrator"},
@@ -8,7 +8,8 @@
     {"from": "L1_REVIEW", "to": "L2_PLANNING", "at": "2026-04-16T08:34:44Z", "agent": "orchestrator"},
     {"from": "L2_PLANNING", "to": "L2_REVIEW", "at": "2026-04-16T08:40:24Z", "agent": "orchestrator"},
     {"from": "L2_REVIEW", "to": "L2_PLANNING", "at": "2026-04-16T08:54:10Z", "agent": "orchestrator", "reason": "gate_failed_blockers"},
-    {"from": "L2_PLANNING", "to": "L2_REVIEW", "at": "2026-04-16T08:56:22Z", "agent": "orchestrator"}
+    {"from": "L2_PLANNING", "to": "L2_REVIEW", "at": "2026-04-16T08:56:22Z", "agent": "orchestrator"},
+    {"from": "L2_REVIEW", "to": "L3_DEVELOP", "at": "2026-04-16T09:00:25Z", "agent": "orchestrator"}
   ],
   "blockers": [],
   "retries": {"L2_REVIEW": 1},
