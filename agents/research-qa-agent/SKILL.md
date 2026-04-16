@@ -23,7 +23,9 @@ Read the workflow stage artifacts configured by the control plane for the curren
 
 Write the gate results into the active gate directory:
 - `gate-review-report.md`
-- `review-passed.json`
+- `review-loop-status.json`
+- `review-round-N.md`
+- `review-passed.json` only when the verdict is `LGTM`
 
 ## Review Discipline
 
@@ -31,10 +33,12 @@ Write the gate results into the active gate directory:
 2. Review only the artifacts produced for the current gate.
 3. Record specific blockers, not vague objections.
 4. Reject any artifact set that is incomplete, internally inconsistent, not independently verifiable, or silently drifts away from the locked requirements.
+5. If issues remain open, set `review-loop-status.json` to `changes_requested` or `blocked` and do not emit `review-passed.json`.
+6. During re-review, verify closure of the previous round's findings before introducing new issues.
 
 ## JSON Output Contract
 
-`review-passed.json` must use this schema:
+`review-passed.json` must use this schema after `LGTM`:
 
 ```json
 {

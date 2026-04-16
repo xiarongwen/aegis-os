@@ -1,11 +1,19 @@
 {
   "id": "qa-validator",
   "name": "QA Validation Agent",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/qa-validator/SKILL.md",
   "enabled": true,
   "evolution": true,
   "role": "validator",
+  "capabilities": [
+    "build",
+    "audit"
+  ],
+  "workflow_types": [
+    "build",
+    "launch"
+  ],
   "allowed_states": [
     "L4_VALIDATE"
   ],

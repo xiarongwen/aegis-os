@@ -20,7 +20,9 @@ From `workflows/{id}/l3-dev/`:
 ## Outputs (write to `workflows/{id}/l3-dev/`)
 
 - `code-review-report.md`
-- `review-passed.json`
+- `review-loop-status.json`
+- `review-round-N.md`
+- `review-passed.json` only when the verdict is `LGTM`
 
 ## Review Checklist
 
@@ -30,6 +32,7 @@ From `workflows/{id}/l3-dev/`:
 4. Security basics such as secret leakage, injection risks, or unsafe file access
 5. Maintainability, modularity, and clarity
 6. PRD alignment without silent requirement drift
+7. If fixes still fail requirement alignment, keep the loop in `changes_requested` or escalate to `blocked`; do not paper over drift with approval.
 
 ## Independence Rule
 

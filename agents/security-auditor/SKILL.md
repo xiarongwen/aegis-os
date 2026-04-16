@@ -20,7 +20,9 @@ From `workflows/{id}/l3-dev/`:
 ## Outputs (write to `workflows/{id}/l3-dev/`)
 
 - `security-scan-report.md`
-- `review-passed.json`
+- `review-loop-status.json`
+- `review-round-N.md`
+- `review-passed.json` only when the verdict is `LGTM`
 
 ## Security Checklist
 
@@ -33,4 +35,4 @@ From `workflows/{id}/l3-dev/`:
 
 ## Veto Power
 
-Critical findings block the workflow immediately and require explicit human intervention.
+Critical findings block the workflow immediately and require explicit human intervention. If the findings are fixable but not yet closed, keep the loop in `changes_requested` until re-review proves they are closed.

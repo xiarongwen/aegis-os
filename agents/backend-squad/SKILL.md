@@ -33,6 +33,7 @@ Read from `workflows/{id}/l2-planning/`:
 3. Validate all inputs at the boundary and use explicit transactions for multi-step mutations.
 4. Treat `requirements-lock.json` as frozen scope; do not reinterpret requirements locally.
 5. Use `run_verification` to prove tests pass, migrations are reversible, and APIs satisfy locked acceptance criteria.
+6. When a review loop is active, answer each finding explicitly in `workflows/{id}/l3-dev/fix-response-round-N.md` and change only what is needed to close the cited issues.
 
 ## Boundaries
 

@@ -1,11 +1,22 @@
 {
   "id": "research-qa-agent",
   "name": "Research QA Agent",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/research-qa-agent/SKILL.md",
   "enabled": true,
   "evolution": true,
   "role": "gate-reviewer",
+  "capabilities": [
+    "governance",
+    "audit"
+  ],
+  "workflow_types": [
+    "research",
+    "planning",
+    "build",
+    "launch",
+    "audit"
+  ],
   "allowed_states": [
     "L1_REVIEW",
     "L2_REVIEW",
@@ -24,6 +35,8 @@
   ],
   "outputs": [
     "gate-review-report.md",
+    "review-loop-status.json",
+    "review-round-{round}.md",
     "review-passed.json"
   ],
   "dependencies": [

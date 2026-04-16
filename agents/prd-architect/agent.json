@@ -1,11 +1,17 @@
 {
   "id": "prd-architect",
   "name": "PRD Architect Agent",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/prd-architect/SKILL.md",
   "enabled": true,
   "evolution": true,
   "role": "planner",
+  "capabilities": [
+    "planning"
+  ],
+  "workflow_types": [
+    "planning"
+  ],
   "allowed_states": [
     "L2_PLANNING"
   ],

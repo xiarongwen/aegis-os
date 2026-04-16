@@ -1,8 +1,31 @@
 {
-  "aegis_version": "1.1.0",
+  "aegis_version": "1.2.0",
   "name": "AEGIS Orchestrator",
   "description": "Git-native multi-agent operating system control plane",
   "initial_state": "INIT",
+  "workflow_types": {
+    "research": {
+      "entry_states": ["L1_RESEARCH", "L1_REVIEW"],
+      "required_capabilities": ["research", "audit", "governance"]
+    },
+    "planning": {
+      "entry_states": ["L2_PLANNING", "L2_REVIEW"],
+      "required_capabilities": ["planning", "audit", "governance"]
+    },
+    "build": {
+      "entry_states": ["L3_DEVELOP", "L3_CODE_REVIEW", "L3_SECURITY_AUDIT", "L4_VALIDATE", "L4_REVIEW"],
+      "required_capabilities": ["build", "audit", "governance"]
+    },
+    "launch": {
+      "entry_states": ["L5_DEPLOY", "L5_REVIEW"],
+      "required_capabilities": ["release", "audit", "governance"]
+    },
+    "operate": {
+      "entry_states": [],
+      "required_capabilities": ["operate", "governance"],
+      "status": "planned"
+    }
+  },
   "states": [
     "INIT",
     "L1_RESEARCH",
@@ -38,122 +61,142 @@
   "transitions": {
     "INIT": { "next": "L1_RESEARCH" },
     "L1_RESEARCH": { "next": "L1_REVIEW" },
-    "L1_REVIEW": { "pass": "L2_PLANNING", "fail": "L1_RESEARCH", "max_retries": 3 },
+    "L1_REVIEW": { "pass": "L2_PLANNING", "changes_requested": "L1_RESEARCH", "blocked": "BLOCKED", "max_rounds": 3 },
     "L2_PLANNING": { "next": "L2_REVIEW" },
-    "L2_REVIEW": { "pass": "L3_DEVELOP", "fail": "L2_PLANNING", "max_retries": 3 },
+    "L2_REVIEW": { "pass": "L3_DEVELOP", "changes_requested": "L2_PLANNING", "blocked": "BLOCKED", "max_rounds": 3 },
     "L3_DEVELOP": { "next": "L3_CODE_REVIEW" },
-    "L3_CODE_REVIEW": { "pass": "L3_SECURITY_AUDIT", "fail": "L3_DEVELOP", "max_retries": 3 },
-    "L3_SECURITY_AUDIT": { "pass": "L4_VALIDATE", "fail": "BLOCKED", "max_retries": 0 },
+    "L3_CODE_REVIEW": { "pass": "L3_SECURITY_AUDIT", "changes_requested": "L3_DEVELOP", "blocked": "BLOCKED", "max_rounds": 3 },
+    "L3_SECURITY_AUDIT": { "pass": "L4_VALIDATE", "changes_requested": "L3_DEVELOP", "blocked": "BLOCKED", "max_rounds": 3 },
     "L4_VALIDATE": { "next": "L4_REVIEW" },
-    "L4_REVIEW": { "pass": "L5_DEPLOY", "fail": "L4_VALIDATE", "max_retries": 3 },
+    "L4_REVIEW": { "pass": "L5_DEPLOY", "changes_requested": "L4_VALIDATE", "blocked": "BLOCKED", "max_rounds": 3 },
     "L5_DEPLOY": { "next": "L5_REVIEW" },
-    "L5_REVIEW": { "pass": "DONE", "fail": "BLOCKED", "max_retries": 0 }
+    "L5_REVIEW": { "pass": "DONE", "changes_requested": "L5_DEPLOY", "blocked": "BLOCKED", "max_rounds": 2 }
   },
   "gates": {
     "L1_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["market-research"],
       "artifact_dir": "workflows/{workflow}/l1-intelligence",
-      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
-      "min_score": 8.0
+      "min_score": 8.0,
+      "review_loop": {
+        "enabled": true,
+        "fix_state": "L1_RESEARCH",
+        "fixer_agents": ["market-research"],
+        "status_artifact": "review-loop-status.json",
+        "round_report_pattern": "review-round-{round}.md",
+        "fix_response_pattern": "fix-response-round-{round}.md",
+        "allowed_statuses": ["changes_requested", "re_review", "lgtm", "blocked"],
+        "terminal_statuses": ["lgtm", "blocked"],
+        "max_rounds": 3,
+        "require_lgtm_for_pass": true
+      }
     },
     "L2_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["prd-architect"],
       "artifact_dir": "workflows/{workflow}/l2-planning",
-      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
-      "min_score": 8.0
+      "min_score": 8.0,
+      "review_loop": {
+        "enabled": true,
+        "fix_state": "L2_PLANNING",
+        "fixer_agents": ["prd-architect"],
+        "status_artifact": "review-loop-status.json",
+        "round_report_pattern": "review-round-{round}.md",
+        "fix_response_pattern": "fix-response-round-{round}.md",
+        "allowed_statuses": ["changes_requested", "re_review", "lgtm", "blocked"],
+        "terminal_statuses": ["lgtm", "blocked"],
+        "max_rounds": 3,
+        "require_lgtm_for_pass": true
+      }
     },
     "L3_CODE_REVIEW": {
       "reviewer": "code-reviewer",
       "reviews_agents": ["frontend-squad", "backend-squad"],
       "artifact_dir": "workflows/{workflow}/l3-dev",
-      "required_outputs": ["code-review-report.md", "review-passed.json"],
+      "required_outputs": ["code-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
-      "min_score": 8.0
+      "min_score": 8.0,
+      "review_loop": {
+        "enabled": true,
+        "fix_state": "L3_DEVELOP",
+        "fixer_agents": ["frontend-squad", "backend-squad"],
+        "status_artifact": "review-loop-status.json",
+        "round_report_pattern": "review-round-{round}.md",
+        "fix_response_pattern": "fix-response-round-{round}.md",
+        "allowed_statuses": ["changes_requested", "re_review", "lgtm", "blocked"],
+        "terminal_statuses": ["lgtm", "blocked"],
+        "max_rounds": 3,
+        "require_lgtm_for_pass": true
+      }
     },
     "L3_SECURITY_AUDIT": {
       "reviewer": "security-auditor",
       "reviews_agents": ["frontend-squad", "backend-squad"],
       "artifact_dir": "workflows/{workflow}/l3-dev",
-      "required_outputs": ["security-scan-report.md", "review-passed.json"],
+      "required_outputs": ["security-scan-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
-      "min_score": 9.0
+      "min_score": 9.0,
+      "review_loop": {
+        "enabled": true,
+        "fix_state": "L3_DEVELOP",
+        "fixer_agents": ["frontend-squad", "backend-squad"],
+        "status_artifact": "review-loop-status.json",
+        "round_report_pattern": "review-round-{round}.md",
+        "fix_response_pattern": "fix-response-round-{round}.md",
+        "allowed_statuses": ["changes_requested", "re_review", "lgtm", "blocked"],
+        "terminal_statuses": ["lgtm", "blocked"],
+        "max_rounds": 3,
+        "require_lgtm_for_pass": true
+      }
     },
     "L4_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["qa-validator"],
       "artifact_dir": "workflows/{workflow}/l4-validation",
-      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
-      "min_score": 8.5
+      "min_score": 8.5,
+      "review_loop": {
+        "enabled": true,
+        "fix_state": "L4_VALIDATE",
+        "fixer_agents": ["qa-validator"],
+        "status_artifact": "review-loop-status.json",
+        "round_report_pattern": "review-round-{round}.md",
+        "fix_response_pattern": "fix-response-round-{round}.md",
+        "allowed_statuses": ["changes_requested", "re_review", "lgtm", "blocked"],
+        "terminal_statuses": ["lgtm", "blocked"],
+        "max_rounds": 3,
+        "require_lgtm_for_pass": true
+      }
     },
     "L5_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["deploy-sre"],
       "artifact_dir": "workflows/{workflow}/l5-release",
-      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
       "min_score": 9.0,
       "requirements": {
         "rollback_plan_exists": true,
         "post_deploy_security_scan_completed": true,
         "no_critical_server_findings": true
+      },
+      "review_loop": {
+        "enabled": true,
+        "fix_state": "L5_DEPLOY",
+        "fixer_agents": ["deploy-sre"],
+        "status_artifact": "review-loop-status.json",
+        "round_report_pattern": "review-round-{round}.md",
+        "fix_response_pattern": "fix-response-round-{round}.md",
+        "allowed_statuses": ["changes_requested", "re_review", "lgtm", "blocked"],
+        "terminal_statuses": ["lgtm", "blocked"],
+        "max_rounds": 2,
+        "require_lgtm_for_pass": true
       }
-    }
-  },
-  "directory_rules": {
-    "market-research": {
-      "read": [],
-      "write": ["workflows/{workflow}/l1-intelligence"]
-    },
-    "research-qa-agent": {
-      "read": [
-        "workflows/{workflow}/l1-intelligence",
-        "workflows/{workflow}/l2-planning",
-        "workflows/{workflow}/l4-validation",
-        "workflows/{workflow}/l5-release"
-      ],
-      "write": [
-        "workflows/{workflow}/l1-intelligence",
-        "workflows/{workflow}/l2-planning",
-        "workflows/{workflow}/l4-validation",
-        "workflows/{workflow}/l5-release"
-      ]
-    },
-    "prd-architect": {
-      "read": ["workflows/{workflow}/l1-intelligence"],
-      "write": ["workflows/{workflow}/l2-planning"]
-    },
-    "frontend-squad": {
-      "read": ["workflows/{workflow}/l2-planning"],
-      "write": ["workflows/{workflow}/l3-dev/frontend"]
-    },
-    "backend-squad": {
-      "read": ["workflows/{workflow}/l2-planning"],
-      "write": ["workflows/{workflow}/l3-dev/backend"]
-    },
-    "code-reviewer": {
-      "read": ["workflows/{workflow}/l2-planning", "workflows/{workflow}/l3-dev"],
-      "write": ["workflows/{workflow}/l3-dev"]
-    },
-    "security-auditor": {
-      "read": ["workflows/{workflow}/l3-dev"],
-      "write": ["workflows/{workflow}/l3-dev"]
-    },
-    "qa-validator": {
-      "read": ["workflows/{workflow}/l2-planning", "workflows/{workflow}/l3-dev", "workflows/{workflow}/l4-validation"],
-      "write": ["workflows/{workflow}/l4-validation"]
-    },
-    "deploy-sre": {
-      "read": ["workflows/{workflow}/l2-planning", "workflows/{workflow}/l3-dev", "workflows/{workflow}/l4-validation"],
-      "write": ["workflows/{workflow}/l5-release"]
-    },
-    "darwin-skill": {
-      "read": ["agents", ".aegis/core", "shared-contexts"],
-      "write": ["agents", ".aegis/core"]
     }
   },
   "review_artifact_schema": {

@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "workflow_id",
+    "gate",
+    "round",
+    "status",
+    "verdict",
+    "open_issues",
+    "closed_issues",
+    "lgtm",
+    "max_rounds",
+    "updated_at"
+  ]
+}

@@ -29,8 +29,8 @@
       }
     },
     "run_gate_review": {
-      "required_inputs": ["artifact_dir", "rubric"],
-      "expected_outputs": ["review-passed.json", "gate-review-report.md"],
+      "required_inputs": ["artifact_dir", "rubric", "review_round"],
+      "expected_outputs": ["gate-review-report.md", "review-loop-status.json", "review-round-N.md", "review-passed.json when verdict is LGTM"],
       "failure_handling": "Fail the gate and preserve the review evidence.",
       "codex_adapter": {
         "primary": "Use registered reviewer agent plus control-plane schema validation",
@@ -96,7 +96,7 @@
       "expected_outputs": ["state.json"],
       "failure_handling": "Stop the workflow because state is the source of truth.",
       "codex_adapter": {
-        "primary": "control-plane state writer",
+        "primary": "python3 -m tools.control_plane write-state --workflow <id> --state <STATE>",
         "fallback": "Keep the workflow in its previous committed state."
       }
     },

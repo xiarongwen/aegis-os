@@ -1,11 +1,23 @@
 {
   "id": "orchestrator",
   "name": "AEGIS Orchestrator",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/orchestrator/SKILL.md",
   "enabled": true,
   "evolution": false,
   "role": "control-plane",
+  "capabilities": [
+    "orchestration",
+    "governance"
+  ],
+  "workflow_types": [
+    "research",
+    "planning",
+    "build",
+    "launch",
+    "audit",
+    "operate"
+  ],
   "allowed_states": [
     "INIT",
     "DONE",

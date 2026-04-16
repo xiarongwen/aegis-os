@@ -32,3 +32,5 @@ Read from `workflows/{id}/l1-intelligence/`:
 3. Use `lock_requirements` to freeze in-scope work, out-of-scope items, acceptance criteria, and non-functional requirements into `requirements-lock.json`.
 4. Ensure every user story maps to explicit acceptance criteria.
 5. Use `run_verification` to catch ambiguity before the planning gate.
+6. If L2 review requests changes, update only the locked planning artifacts and add `fix-response-round-N.md` in `workflows/{id}/l2-planning/`.
+7. If resolving review feedback requires changing requirement meaning, send the workflow back through planning change control instead of silently mutating scope.

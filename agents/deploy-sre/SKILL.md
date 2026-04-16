@@ -32,6 +32,7 @@ Use `ask_user` to gather target-environment and access details before deployment
 3. Document the exact deployment strategy and verification commands.
 4. Refuse to deploy artifacts that drift from the locked requirements or lack QA traceability proof.
 5. Use `run_verification` to confirm health checks, smoke tests, monitoring, and post-deploy security evidence.
+6. If L5 review requests changes, update only the release artifacts and add `fix-response-round-N.md` in `workflows/{id}/l5-release/`.
 
 ## Safety Rules
 

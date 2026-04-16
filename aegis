@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+AEGIS_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+cd "$AEGIS_ROOT"
+python3 -m tools.automation_runner "$@"

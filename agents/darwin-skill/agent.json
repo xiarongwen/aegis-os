@@ -1,11 +1,16 @@
 {
   "id": "darwin-skill",
   "name": "Darwin Evolution Engine",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/darwin-skill/SKILL.md",
   "enabled": true,
   "evolution": false,
   "role": "evolution-engine",
+  "capabilities": [
+    "evolution",
+    "governance"
+  ],
+  "workflow_types": [],
   "allowed_states": [],
   "contract_actions": [
     "run_verification",

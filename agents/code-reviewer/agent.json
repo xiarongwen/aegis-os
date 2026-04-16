@@ -1,11 +1,19 @@
 {
   "id": "code-reviewer",
   "name": "Code Review Agent",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/code-reviewer/SKILL.md",
   "enabled": true,
   "evolution": true,
   "role": "code-reviewer",
+  "capabilities": [
+    "audit",
+    "governance"
+  ],
+  "workflow_types": [
+    "build",
+    "audit"
+  ],
   "allowed_states": [
     "L3_CODE_REVIEW"
   ],
@@ -19,6 +27,8 @@
   ],
   "outputs": [
     "workflows/{workflow}/l3-dev/code-review-report.md",
+    "workflows/{workflow}/l3-dev/review-loop-status.json",
+    "workflows/{workflow}/l3-dev/review-round-{round}.md",
     "workflows/{workflow}/l3-dev/review-passed.json"
   ],
   "dependencies": [

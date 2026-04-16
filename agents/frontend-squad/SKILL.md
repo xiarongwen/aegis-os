@@ -32,6 +32,7 @@ Read from `workflows/{id}/l2-planning/`:
 3. Keep the code typed, testable, and aligned with the architecture document.
 4. Treat `requirements-lock.json` as frozen scope; do not add or redefine requirements without sending the work back to planning.
 5. Use `run_verification` to prove tests, type checks, and linting are all green.
+6. When a review loop is active, answer each finding explicitly in `workflows/{id}/l3-dev/fix-response-round-N.md` and change only what is needed to close the cited issues.
 
 ## Boundaries
 

@@ -1,15 +1,132 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "last_updated": "2026-04-16",
+  "capabilities": [
+    {
+      "id": "orchestration",
+      "name": "Workflow Orchestration",
+      "description": "Receives owner intent, selects workflow type, and drives state transitions.",
+      "governance_mechanisms": ["intent_lock", "state_machine", "audit_trail"],
+      "status": "stable"
+    },
+    {
+      "id": "governance",
+      "name": "Governance",
+      "description": "Applies requirement locks, change control, and review-loop enforcement.",
+      "governance_mechanisms": ["requirement_lock", "review_fix_lgtm_loop", "change_control", "audit_trail"],
+      "status": "stable"
+    },
+    {
+      "id": "research",
+      "name": "Research",
+      "description": "Gathers evidence, evaluates markets, and frames opportunities.",
+      "governance_mechanisms": ["source_verification", "independent_review"],
+      "status": "stable"
+    },
+    {
+      "id": "planning",
+      "name": "Planning",
+      "description": "Turns intent into PRDs, architecture, and executable plans.",
+      "governance_mechanisms": ["intent_lock", "requirement_lock", "review_fix_lgtm_loop"],
+      "status": "stable"
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "description": "Implements product and engineering changes under locked scope.",
+      "governance_mechanisms": ["scope_control", "review_fix_lgtm_loop", "requirements_traceability"],
+      "status": "stable"
+    },
+    {
+      "id": "audit",
+      "name": "Audit",
+      "description": "Performs structured review, code review, security review, and root-cause analysis.",
+      "governance_mechanisms": ["independent_review", "review_fix_lgtm_loop", "audit_trail"],
+      "status": "stable"
+    },
+    {
+      "id": "release",
+      "name": "Release",
+      "description": "Handles deployment, release validation, and rollback planning.",
+      "governance_mechanisms": ["requirement_lock", "review_fix_lgtm_loop", "rollback_control"],
+      "status": "stable"
+    },
+    {
+      "id": "operate",
+      "name": "Operate",
+      "description": "Supports future operating workflows such as support, outreach, and ongoing company execution.",
+      "governance_mechanisms": ["intent_lock", "change_control", "audit_trail"],
+      "status": "planned"
+    },
+    {
+      "id": "evolution",
+      "name": "Evolution",
+      "description": "Evolves agent instructions conservatively under the control-plane ratchet.",
+      "governance_mechanisms": ["doctor_gate", "ratchet", "rollback_control"],
+      "status": "stable"
+    }
+  ],
+  "workflow_types": [
+    {
+      "id": "research",
+      "name": "Research Workflow",
+      "description": "Researches markets, products, or opportunities and produces source-backed conclusions.",
+      "required_capabilities": ["orchestration", "research", "audit"],
+      "primary_states": ["L1_RESEARCH", "L1_REVIEW"],
+      "status": "stable"
+    },
+    {
+      "id": "planning",
+      "name": "Planning Workflow",
+      "description": "Turns intent into locked requirements, architecture, and task decomposition.",
+      "required_capabilities": ["orchestration", "planning", "governance", "audit"],
+      "primary_states": ["L2_PLANNING", "L2_REVIEW"],
+      "status": "stable"
+    },
+    {
+      "id": "build",
+      "name": "Build Workflow",
+      "description": "Implements scoped changes and closes them through review and QA loops.",
+      "required_capabilities": ["orchestration", "build", "audit", "governance"],
+      "primary_states": ["L3_DEVELOP", "L3_CODE_REVIEW", "L3_SECURITY_AUDIT", "L4_VALIDATE", "L4_REVIEW"],
+      "status": "stable"
+    },
+    {
+      "id": "launch",
+      "name": "Launch Workflow",
+      "description": "Deploys approved work with rollback planning and release review.",
+      "required_capabilities": ["orchestration", "release", "audit", "governance"],
+      "primary_states": ["L5_DEPLOY", "L5_REVIEW"],
+      "status": "stable"
+    },
+    {
+      "id": "audit",
+      "name": "Audit Workflow",
+      "description": "Supports review-heavy workflows and future system or project audits.",
+      "required_capabilities": ["orchestration", "audit", "governance"],
+      "primary_states": ["L2_REVIEW", "L3_CODE_REVIEW", "L3_SECURITY_AUDIT", "L4_REVIEW", "L5_REVIEW"],
+      "status": "stable"
+    },
+    {
+      "id": "operate",
+      "name": "Operate Workflow",
+      "description": "Reserved for future company-operating workflows beyond research and build.",
+      "required_capabilities": ["orchestration", "operate", "governance"],
+      "primary_states": [],
+      "status": "planned"
+    }
+  ],
   "agents": [
     {
       "id": "orchestrator",
       "name": "AEGIS Orchestrator",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/orchestrator/SKILL.md",
       "enabled": true,
       "evolution": false,
       "role": "control-plane",
+      "capabilities": ["orchestration", "governance"],
+      "workflow_types": ["research", "planning", "build", "launch", "audit", "operate"],
       "allowed_states": ["INIT", "DONE", "BLOCKED"],
       "contract_actions": ["spawn_agent", "run_gate_review", "write_state", "sync_agent_metadata"],
       "inputs": ["human:workflow_request"],
@@ -21,11 +138,13 @@
     {
       "id": "market-research",
       "name": "Market Research Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/market-research/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "research",
+      "capabilities": ["research"],
+      "workflow_types": ["research"],
       "allowed_states": ["L1_RESEARCH"],
       "contract_actions": ["search_web", "fetch_source", "run_verification"],
       "inputs": ["human:product_idea", "human:target_market?"],
@@ -41,11 +160,13 @@
     {
       "id": "research-qa-agent",
       "name": "Research QA Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/research-qa-agent/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "gate-reviewer",
+      "capabilities": ["governance", "audit"],
+      "workflow_types": ["research", "planning", "build", "launch", "audit"],
       "allowed_states": ["L1_REVIEW", "L2_REVIEW", "L4_REVIEW", "L5_REVIEW"],
       "contract_actions": ["run_gate_review", "run_verification"],
       "inputs": [
@@ -54,7 +175,7 @@
         "workflows/{workflow}/l4-validation/",
         "workflows/{workflow}/l5-release/"
       ],
-      "outputs": ["gate-review-report.md", "review-passed.json"],
+      "outputs": ["gate-review-report.md", "review-loop-status.json", "review-round-{round}.md", "review-passed.json"],
       "dependencies": ["contract:run_gate_review", "contract:run_verification"],
       "description": "Independent reviewer for research, planning, QA, and release gates.",
       "metrics": { "last_score": 8.0, "evolution_count": 0, "rollback_count": 0 }
@@ -62,11 +183,13 @@
     {
       "id": "prd-architect",
       "name": "PRD Architect Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/prd-architect/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "planner",
+      "capabilities": ["planning"],
+      "workflow_types": ["planning"],
       "allowed_states": ["L2_PLANNING"],
       "contract_actions": ["write_plan", "lock_requirements", "run_verification"],
       "inputs": [
@@ -87,11 +210,13 @@
     {
       "id": "frontend-squad",
       "name": "Frontend Development Squad",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/frontend-squad/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "developer",
+      "capabilities": ["build"],
+      "workflow_types": ["build"],
       "allowed_states": ["L3_DEVELOP"],
       "contract_actions": ["write_plan", "run_test_driven_cycle", "run_verification"],
       "inputs": [
@@ -108,11 +233,13 @@
     {
       "id": "backend-squad",
       "name": "Backend Development Squad",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/backend-squad/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "developer",
+      "capabilities": ["build"],
+      "workflow_types": ["build"],
       "allowed_states": ["L3_DEVELOP"],
       "contract_actions": ["write_plan", "run_test_driven_cycle", "run_verification"],
       "inputs": [
@@ -129,15 +256,22 @@
     {
       "id": "code-reviewer",
       "name": "Code Review Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/code-reviewer/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "code-reviewer",
+      "capabilities": ["audit", "governance"],
+      "workflow_types": ["build", "audit"],
       "allowed_states": ["L3_CODE_REVIEW"],
       "contract_actions": ["run_gate_review", "run_verification"],
       "inputs": ["workflows/{workflow}/l2-planning/PRD.md", "workflows/{workflow}/l3-dev/"],
-      "outputs": ["workflows/{workflow}/l3-dev/code-review-report.md", "workflows/{workflow}/l3-dev/review-passed.json"],
+      "outputs": [
+        "workflows/{workflow}/l3-dev/code-review-report.md",
+        "workflows/{workflow}/l3-dev/review-loop-status.json",
+        "workflows/{workflow}/l3-dev/review-round-{round}.md",
+        "workflows/{workflow}/l3-dev/review-passed.json"
+      ],
       "dependencies": ["contract:run_gate_review", "contract:run_verification"],
       "description": "Independent code quality and architecture reviewer for development artifacts.",
       "metrics": { "last_score": 8.0, "evolution_count": 0, "rollback_count": 0 }
@@ -145,15 +279,22 @@
     {
       "id": "security-auditor",
       "name": "Security Audit Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/security-auditor/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "security-reviewer",
+      "capabilities": ["audit", "governance"],
+      "workflow_types": ["build", "audit", "launch"],
       "allowed_states": ["L3_SECURITY_AUDIT"],
       "contract_actions": ["run_gate_review", "run_verification"],
       "inputs": ["workflows/{workflow}/l3-dev/"],
-      "outputs": ["workflows/{workflow}/l3-dev/security-scan-report.md", "workflows/{workflow}/l3-dev/review-passed.json"],
+      "outputs": [
+        "workflows/{workflow}/l3-dev/security-scan-report.md",
+        "workflows/{workflow}/l3-dev/review-loop-status.json",
+        "workflows/{workflow}/l3-dev/review-round-{round}.md",
+        "workflows/{workflow}/l3-dev/review-passed.json"
+      ],
       "dependencies": ["contract:run_gate_review", "contract:run_verification"],
       "description": "Performs secure-code review and enforces the security veto gate.",
       "metrics": { "last_score": 8.5, "evolution_count": 0, "rollback_count": 0 }
@@ -161,11 +302,13 @@
     {
       "id": "qa-validator",
       "name": "QA Validation Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/qa-validator/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "validator",
+      "capabilities": ["build", "audit"],
+      "workflow_types": ["build", "launch"],
       "allowed_states": ["L4_VALIDATE"],
       "contract_actions": ["validate_requirements_traceability", "run_verification"],
       "inputs": [
@@ -186,11 +329,13 @@
     {
       "id": "deploy-sre",
       "name": "Deploy SRE Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/deploy-sre/SKILL.md",
       "enabled": true,
       "evolution": true,
       "role": "release-engineer",
+      "capabilities": ["release"],
+      "workflow_types": ["launch"],
       "allowed_states": ["L5_DEPLOY"],
       "contract_actions": ["ask_user", "run_verification"],
       "inputs": [
@@ -213,11 +358,13 @@
     {
       "id": "darwin-skill",
       "name": "Darwin Evolution Engine",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "entrypoint": "agents/darwin-skill/SKILL.md",
       "enabled": true,
       "evolution": false,
       "role": "evolution-engine",
+      "capabilities": ["evolution", "governance"],
+      "workflow_types": [],
       "allowed_states": [],
       "contract_actions": ["run_verification", "sync_agent_metadata"],
       "inputs": ["agents/", ".aegis/core/registry.json", "shared-contexts/review-rubric-8dim.json", "shared-contexts/tool-contracts.yml"],

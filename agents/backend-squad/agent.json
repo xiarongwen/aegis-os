@@ -1,11 +1,17 @@
 {
   "id": "backend-squad",
   "name": "Backend Development Squad",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/backend-squad/SKILL.md",
   "enabled": true,
   "evolution": true,
   "role": "developer",
+  "capabilities": [
+    "build"
+  ],
+  "workflow_types": [
+    "build"
+  ],
   "allowed_states": [
     "L3_DEVELOP"
   ],

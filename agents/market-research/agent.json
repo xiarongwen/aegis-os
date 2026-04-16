@@ -1,11 +1,17 @@
 {
   "id": "market-research",
   "name": "Market Research Agent",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entrypoint": "agents/market-research/SKILL.md",
   "enabled": true,
   "evolution": true,
   "role": "research",
+  "capabilities": [
+    "research"
+  ],
+  "workflow_types": [
+    "research"
+  ],
   "allowed_states": [
     "L1_RESEARCH"
   ],

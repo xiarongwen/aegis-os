@@ -22,6 +22,7 @@ CONTRACTS_PATH = ROOT / "shared-contexts/tool-contracts.yml"
 EVOLUTION_LOG_PATH = ROOT / ".aegis/core/evolution.log"
 REQUIREMENTS_LOCK_SCHEMA_PATH = ROOT / "shared-contexts/requirements-lock-schema.json"
 REQUIREMENTS_TRACEABILITY_SCHEMA_PATH = ROOT / "shared-contexts/requirements-traceability-schema.json"
+REVIEW_LOOP_SCHEMA_PATH = ROOT / "shared-contexts/review-loop-status-schema.json"
 SKILLS_DIR = Path.home() / ".claude/skills"
 FORBIDDEN_TOKENS = ["WebSearch", "AskUserQuestion", "mcp__fetch__fetch", "superpowers:", "Agent({"]
 WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-_]{1,62}$")
@@ -66,6 +67,24 @@ def validate_registry_schema(registry: dict[str, Any]) -> list[str]:
     for key in schema["required"]:
         if key not in registry:
             errors.append(f"registry missing required key: {key}")
+    capability_ids = set()
+    for capability in registry.get("capabilities", []):
+        for key in schema["properties"]["capabilities"]["items"]["required"]:
+            if key not in capability:
+                errors.append(f"capability {capability.get('id', '<unknown>')} missing required key: {key}")
+        capability_id = capability.get("id")
+        if capability_id in capability_ids:
+            errors.append(f"duplicate capability id: {capability_id}")
+        capability_ids.add(capability_id)
+    workflow_type_ids = set()
+    for workflow_type in registry.get("workflow_types", []):
+        for key in schema["properties"]["workflow_types"]["items"]["required"]:
+            if key not in workflow_type:
+                errors.append(f"workflow type {workflow_type.get('id', '<unknown>')} missing required key: {key}")
+        workflow_type_id = workflow_type.get("id")
+        if workflow_type_id in workflow_type_ids:
+            errors.append(f"duplicate workflow type id: {workflow_type_id}")
+        workflow_type_ids.add(workflow_type_id)
     agents = registry.get("agents", [])
     if not isinstance(agents, list) or not agents:
         errors.append("registry agents must be a non-empty list")
@@ -83,6 +102,12 @@ def validate_registry_schema(registry: dict[str, Any]) -> list[str]:
         if agent_id in seen_ids:
             errors.append(f"duplicate agent id: {agent_id}")
         seen_ids.add(agent_id)
+        for capability_id in agent.get("capabilities", []):
+            if capability_id not in capability_ids:
+                errors.append(f"agent {agent_id} references unknown capability: {capability_id}")
+        for workflow_type_id in agent.get("workflow_types", []):
+            if workflow_type_id not in workflow_type_ids:
+                errors.append(f"agent {agent_id} references unknown workflow type: {workflow_type_id}")
     return errors
 
 
@@ -90,8 +115,15 @@ def validate_orchestrator(registry: dict[str, Any], orchestrator: dict[str, Any]
     errors: list[str] = []
     agents = registry_by_id(registry)
     states = set(orchestrator.get("states", []))
+    workflow_type_ids = {workflow_type["id"] for workflow_type in registry.get("workflow_types", [])}
     if orchestrator.get("initial_state") not in states:
         errors.append("orchestrator initial_state must be one of the declared states")
+    for workflow_type_id, metadata in orchestrator.get("workflow_types", {}).items():
+        if workflow_type_id not in workflow_type_ids:
+            errors.append(f"orchestrator references unknown workflow type: {workflow_type_id}")
+        for state in metadata.get("entry_states", []):
+            if state not in states:
+                errors.append(f"workflow type {workflow_type_id} references unknown state: {state}")
     for state, agent_ids in orchestrator.get("state_agents", {}).items():
         if state not in states:
             errors.append(f"state_agents references unknown state: {state}")
@@ -102,7 +134,7 @@ def validate_orchestrator(registry: dict[str, Any], orchestrator: dict[str, Any]
         if state not in states:
             errors.append(f"transition declared for unknown state: {state}")
         for key, value in transition.items():
-            if key in {"next", "pass", "fail"} and value not in states:
+            if key != "max_rounds" and isinstance(value, str) and value not in states:
                 errors.append(f"transition {state}.{key} references unknown state: {value}")
     for gate_state, gate in orchestrator.get("gates", {}).items():
         reviewer = gate["reviewer"]
@@ -113,6 +145,14 @@ def validate_orchestrator(registry: dict[str, Any], orchestrator: dict[str, Any]
                 errors.append(f"gate {gate_state} reviews missing agent: {reviewed_agent}")
             if reviewed_agent == reviewer:
                 errors.append(f"gate {gate_state} reviewer {reviewer} is not independent")
+        review_loop = gate.get("review_loop")
+        if review_loop:
+            fix_state = review_loop.get("fix_state")
+            if fix_state and fix_state not in states:
+                errors.append(f"gate {gate_state} review_loop references unknown fix_state: {fix_state}")
+            for fixer in review_loop.get("fixer_agents", []):
+                if fixer not in agents:
+                    errors.append(f"gate {gate_state} review_loop references unknown fixer agent: {fixer}")
     return errors
 
 
@@ -149,6 +189,11 @@ def requirements_traceability_path(workflow: str) -> Path:
     return ROOT / "workflows" / workflow / "l4-validation" / "requirements-traceability.json"
 
 
+def gate_artifact_dir(workflow: str, gate_state: str, orchestrator: dict[str, Any]) -> Path:
+    gate = orchestrator["gates"][gate_state]
+    return render_template(gate["artifact_dir"], workflow)
+
+
 def compute_requirements_lock_hash(payload: dict[str, Any]) -> str:
     canonical = deepcopy(payload)
     canonical.pop("lock_hash", None)
@@ -182,6 +227,50 @@ def enforce_requirements_lock(state: dict[str, Any], workflow: str, state_name: 
         raise ControlPlaneError(f"{lock_path.relative_to(ROOT)} contains an invalid lock_hash")
     if state_hash != computed_hash:
         raise ControlPlaneError("workflow requirements_lock_hash does not match requirements-lock.json")
+
+
+def validate_review_loop_status(path: Path, workflow: str, gate_state: str, gate: dict[str, Any]) -> dict[str, Any]:
+    payload = load_json(path)
+    validate_required_keys(payload, REVIEW_LOOP_SCHEMA_PATH, path.relative_to(ROOT).as_posix())
+    review_loop = gate["review_loop"]
+    if payload["workflow_id"] != workflow:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} workflow_id mismatch")
+    if payload["gate"] != gate_state:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} gate mismatch: expected {gate_state}")
+    if payload["status"] not in review_loop["allowed_statuses"]:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} has invalid status {payload['status']}")
+    if not isinstance(payload["round"], int) or payload["round"] < 1:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} round must be a positive integer")
+    if payload["round"] > review_loop["max_rounds"]:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} round exceeds max_rounds")
+    if payload["max_rounds"] != review_loop["max_rounds"]:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} max_rounds does not match gate configuration")
+    if payload["round"] == review_loop["max_rounds"] and payload["status"] == "changes_requested":
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} cannot request more changes at the max review round")
+    if not isinstance(payload["open_issues"], list) or not isinstance(payload["closed_issues"], list):
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} open_issues and closed_issues must be lists")
+    if payload["status"] == "changes_requested":
+        if payload["lgtm"]:
+            raise ControlPlaneError(f"{path.relative_to(ROOT)} changes_requested status cannot set lgtm=true")
+        if not payload["open_issues"]:
+            raise ControlPlaneError(f"{path.relative_to(ROOT)} changes_requested status requires open issues")
+    if payload["status"] == "blocked" and not payload["open_issues"]:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} blocked status requires open issues")
+    if payload["status"] == "lgtm":
+        if not payload["lgtm"]:
+            raise ControlPlaneError(f"{path.relative_to(ROOT)} lgtm status must set lgtm=true")
+        if payload["open_issues"]:
+            raise ControlPlaneError(f"{path.relative_to(ROOT)} lgtm status cannot have open issues")
+        if payload["verdict"] != "LGTM":
+            raise ControlPlaneError(f"{path.relative_to(ROOT)} lgtm status must use verdict LGTM")
+    return payload
+
+
+def validate_fix_response_artifact(path: Path) -> None:
+    if not path.exists():
+        raise ControlPlaneError(f"missing fix response artifact: {path.relative_to(ROOT)}")
+    if path.stat().st_size == 0:
+        raise ControlPlaneError(f"empty fix response artifact: {path.relative_to(ROOT)}")
 
 
 def validate_skill_contract_mentions(registry: dict[str, Any]) -> list[str]:
@@ -258,6 +347,52 @@ def state_path(workflow: str) -> Path:
     return ROOT / "workflows" / workflow / "state.json"
 
 
+def legal_next_states(state: dict[str, Any], orchestrator: dict[str, Any]) -> set[str]:
+    transition = orchestrator["transitions"].get(state["current_state"], {})
+    if state.get("next_state_hint"):
+        return {state["next_state_hint"]}
+    return {
+        value
+        for key, value in transition.items()
+        if key != "max_rounds" and isinstance(value, str)
+    }
+
+
+def write_state_transition(workflow: str, target_state: str) -> list[str]:
+    validate_workflow_id(workflow)
+    _, orchestrator, _ = get_context()
+    state = load_state(workflow)
+    current_state = state["current_state"]
+    declared_states = set(orchestrator.get("states", []))
+    if target_state not in declared_states:
+        raise ControlPlaneError(f"unknown target state: {target_state}")
+    allowed = legal_next_states(state, orchestrator)
+    if target_state not in allowed:
+        allowed_display = ", ".join(sorted(allowed)) or "<none>"
+        raise ControlPlaneError(
+            f"illegal state transition for {workflow}: {current_state} -> {target_state} (allowed: {allowed_display})"
+        )
+    state.setdefault("history", []).append(
+        {
+            "from": current_state,
+            "to": target_state,
+            "transitioned_at": utc_now()
+        }
+    )
+    state["current_state"] = target_state
+    state["next_state_hint"] = None
+    if target_state == "BLOCKED":
+        state.setdefault("blockers", []).append(
+            {
+                "state": current_state,
+                "blocked_at": utc_now(),
+                "active_review_loop": deepcopy(state.get("active_review_loop"))
+            }
+        )
+    write_json(state_path(workflow), state)
+    return [f"advanced workflow {workflow}: {current_state} -> {target_state}"]
+
+
 def initialize_workflow(workflow: str) -> dict[str, Any]:
     workflow_root = ROOT / "workflows" / workflow
     for path in [
@@ -276,7 +411,11 @@ def initialize_workflow(workflow: str) -> dict[str, Any]:
         "history": [],
         "blockers": [],
         "retries": {},
-        "requirements_lock_hash": None
+        "requirements_lock_hash": None,
+        "review_loops": {},
+        "active_review_loop": None,
+        "next_state_hint": None,
+        "workflow_type": None
     }
     write_json(state_path(workflow), payload)
     return payload
@@ -329,6 +468,12 @@ def pre_agent_run(agent_id: str, workflow: str) -> list[str]:
     enforce_requirements_lock(state, workflow, state["current_state"])
     if agents[agent_id]["allowed_states"] and state["current_state"] not in agents[agent_id]["allowed_states"]:
         raise ControlPlaneError(f"agent {agent_id} is not allowed in state {state['current_state']}")
+    active_loop = state.get("active_review_loop")
+    if active_loop and state["current_state"] == active_loop.get("fix_state"):
+        if agent_id not in active_loop.get("fixer_agents", []):
+            raise ControlPlaneError(
+                f"agent {agent_id} is not allowed to respond to active review loop for {active_loop['gate']}"
+            )
     validate_inputs(agents[agent_id], workflow)
     validate_dependencies(agents[agent_id], contracts)
     return [f"pre-run validation passed for {agent_id} in workflow {workflow}"]
@@ -354,13 +499,42 @@ def validate_outputs(agent_id: str, workflow: str, state_name: str) -> None:
     agents = registry_by_id(registry)
     if state_name in orchestrator["gates"]:
         gate = orchestrator["gates"][state_name]
-        artifact_dir = render_template(gate["artifact_dir"], workflow)
+        artifact_dir = gate_artifact_dir(workflow, state_name, orchestrator)
         for output_name in gate["required_outputs"]:
             target = artifact_dir / output_name
             if not target.exists():
                 raise ControlPlaneError(f"missing gate output: {target.relative_to(ROOT)}")
+        review_loop = gate.get("review_loop")
+        if review_loop and review_loop.get("enabled"):
+            loop_status_path = artifact_dir / review_loop["status_artifact"]
+            if not loop_status_path.exists():
+                raise ControlPlaneError(f"missing review loop status artifact: {loop_status_path.relative_to(ROOT)}")
+            loop_status = validate_review_loop_status(loop_status_path, workflow, state_name, gate)
+            round_report = artifact_dir / review_loop["round_report_pattern"].format(round=loop_status["round"])
+            if not round_report.exists():
+                raise ControlPlaneError(f"missing review round artifact: {round_report.relative_to(ROOT)}")
+            if loop_status["status"] == "re_review":
+                raise ControlPlaneError(
+                    f"reviewer output cannot finish in re_review status: {loop_status_path.relative_to(ROOT)}"
+                )
+            review_passed_path = artifact_dir / "review-passed.json"
+            if loop_status["status"] == "lgtm":
+                if not review_passed_path.exists():
+                    raise ControlPlaneError(f"missing review-passed.json for lgtm gate: {review_passed_path.relative_to(ROOT)}")
+                validate_review_artifact(review_passed_path, gate["reviewer"], gate["min_score"])
+            elif review_passed_path.exists():
+                raise ControlPlaneError(
+                    f"review-passed.json must only exist after LGTM: {review_passed_path.relative_to(ROOT)}"
+                )
+            return
         validate_review_artifact(artifact_dir / "review-passed.json", gate["reviewer"], gate["min_score"])
         return
+    state = load_state(workflow)
+    active_loop = state.get("active_review_loop")
+    if active_loop and state_name == active_loop.get("fix_state"):
+        artifact_dir = gate_artifact_dir(workflow, active_loop["gate"], orchestrator)
+        fix_response = artifact_dir / active_loop["fix_response_pattern"].format(round=active_loop["round"])
+        validate_fix_response_artifact(fix_response)
     for item in agents[agent_id]["outputs"]:
         target = render_template(item, workflow)
         if item.endswith("/"):
@@ -378,8 +552,10 @@ def git(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.C
 
 
 def post_agent_run(agent_id: str, workflow: str) -> list[str]:
+    _, orchestrator, _ = get_context()
     state = load_state(workflow)
     validate_outputs(agent_id, workflow, state["current_state"])
+    active_loop = state.get("active_review_loop")
     if state["current_state"] == "L2_PLANNING":
         lock_path = requirements_lock_path(workflow)
         payload = load_json(lock_path)
@@ -395,6 +571,50 @@ def post_agent_run(agent_id: str, workflow: str) -> list[str]:
         validate_required_keys(payload, REQUIREMENTS_TRACEABILITY_SCHEMA_PATH, traceability_path.relative_to(ROOT).as_posix())
         if payload["requirements_lock_hash"] != state.get("requirements_lock_hash"):
             raise ControlPlaneError("requirements traceability hash does not match the locked workflow requirements")
+    elif state["current_state"] in orchestrator["gates"]:
+        gate_state = state["current_state"]
+        gate = orchestrator["gates"][gate_state]
+        review_loop = gate.get("review_loop")
+        if review_loop and review_loop.get("enabled"):
+            artifact_dir = gate_artifact_dir(workflow, gate_state, orchestrator)
+            loop_payload = validate_review_loop_status(
+                artifact_dir / review_loop["status_artifact"],
+                workflow,
+                gate_state,
+                gate,
+            )
+            state.setdefault("review_loops", {})[gate_state] = loop_payload
+            transition = orchestrator["transitions"][gate_state]
+            if loop_payload["status"] == "lgtm":
+                state["active_review_loop"] = None
+                state["next_state_hint"] = transition.get("pass")
+            elif loop_payload["status"] == "blocked":
+                state["active_review_loop"] = {
+                    "gate": gate_state,
+                    "round": loop_payload["round"],
+                    "status": "blocked",
+                    "fix_state": review_loop.get("fix_state"),
+                    "fixer_agents": review_loop.get("fixer_agents", []),
+                    "fix_response_pattern": review_loop["fix_response_pattern"]
+                }
+                state["next_state_hint"] = transition.get("blocked", "BLOCKED")
+            else:
+                state["active_review_loop"] = {
+                    "gate": gate_state,
+                    "round": loop_payload["round"],
+                    "status": loop_payload["status"],
+                    "fix_state": review_loop.get("fix_state"),
+                    "fixer_agents": review_loop.get("fixer_agents", []),
+                    "fix_response_pattern": review_loop["fix_response_pattern"]
+                }
+                state["next_state_hint"] = transition.get("changes_requested", review_loop.get("fix_state"))
+            write_json(state_path(workflow), state)
+    elif active_loop and state["current_state"] == active_loop.get("fix_state"):
+        gate_state = active_loop["gate"]
+        state["active_review_loop"]["status"] = "re_review"
+        state.setdefault("review_loops", {})[gate_state] = deepcopy(state["active_review_loop"])
+        state["next_state_hint"] = gate_state
+        write_json(state_path(workflow), state)
     else:
         enforce_requirements_lock(state, workflow, state["current_state"])
     workflow_dir = ROOT / "workflows" / workflow
@@ -562,6 +782,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("sync-agents")
     sub.add_parser("workflow-dry-run")
     sub.add_parser("install-cron")
+    write_state_cmd = sub.add_parser("write-state")
+    write_state_cmd.add_argument("--workflow", required=True)
+    write_state_cmd.add_argument("--state", required=True)
     pre = sub.add_parser("pre-agent-run")
     pre.add_argument("--agent", required=True)
     pre.add_argument("--workflow", required=True)
@@ -581,6 +804,8 @@ def main(argv: list[str] | None = None) -> int:
             result = workflow_dry_run()
         elif args.command == "install-cron":
             result = ensure_cron()
+        elif args.command == "write-state":
+            result = write_state_transition(args.workflow, args.state)
         elif args.command == "pre-agent-run":
             result = pre_agent_run(args.agent, args.workflow)
         elif args.command == "post-agent-run":
