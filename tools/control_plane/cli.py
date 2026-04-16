@@ -1,0 +1,600 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from copy import deepcopy
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[2]
+REGISTRY_PATH = ROOT / ".aegis/core/registry.json"
+REGISTRY_SCHEMA_PATH = ROOT / ".aegis/core/registry.schema.json"
+ORCHESTRATOR_PATH = ROOT / ".aegis/core/orchestrator.yml"
+CONTRACTS_PATH = ROOT / "shared-contexts/tool-contracts.yml"
+EVOLUTION_LOG_PATH = ROOT / ".aegis/core/evolution.log"
+REQUIREMENTS_LOCK_SCHEMA_PATH = ROOT / "shared-contexts/requirements-lock-schema.json"
+REQUIREMENTS_TRACEABILITY_SCHEMA_PATH = ROOT / "shared-contexts/requirements-traceability-schema.json"
+SKILLS_DIR = Path.home() / ".claude/skills"
+FORBIDDEN_TOKENS = ["WebSearch", "AskUserQuestion", "mcp__fetch__fetch", "superpowers:", "Agent({"]
+WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-_]{1,62}$")
+
+
+class ControlPlaneError(RuntimeError):
+    pass
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def load_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def normalize(value: Any) -> Any:
+    return json.loads(json.dumps(value, sort_keys=True))
+
+
+def render_template(value: str, workflow: str) -> Path:
+    return ROOT / value.replace("{workflow}", workflow)
+
+
+def get_context() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    return load_json(REGISTRY_PATH), load_json(ORCHESTRATOR_PATH), load_json(CONTRACTS_PATH)
+
+
+def registry_by_id(registry: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {agent["id"]: agent for agent in registry["agents"]}
+
+
+def validate_registry_schema(registry: dict[str, Any]) -> list[str]:
+    schema = load_json(REGISTRY_SCHEMA_PATH)
+    errors: list[str] = []
+    for key in schema["required"]:
+        if key not in registry:
+            errors.append(f"registry missing required key: {key}")
+    agents = registry.get("agents", [])
+    if not isinstance(agents, list) or not agents:
+        errors.append("registry agents must be a non-empty list")
+        return errors
+    required_agent_keys = schema["properties"]["agents"]["items"]["required"]
+    seen_ids: set[str] = set()
+    for agent in agents:
+        for key in required_agent_keys:
+            if key not in agent:
+                errors.append(f"agent {agent.get('id', '<unknown>')} missing required key: {key}")
+        agent_id = agent.get("id")
+        if not isinstance(agent_id, str) or not agent_id:
+            errors.append("agent id must be a non-empty string")
+            continue
+        if agent_id in seen_ids:
+            errors.append(f"duplicate agent id: {agent_id}")
+        seen_ids.add(agent_id)
+    return errors
+
+
+def validate_orchestrator(registry: dict[str, Any], orchestrator: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    agents = registry_by_id(registry)
+    states = set(orchestrator.get("states", []))
+    if orchestrator.get("initial_state") not in states:
+        errors.append("orchestrator initial_state must be one of the declared states")
+    for state, agent_ids in orchestrator.get("state_agents", {}).items():
+        if state not in states:
+            errors.append(f"state_agents references unknown state: {state}")
+        for agent_id in agent_ids:
+            if agent_id not in agents:
+                errors.append(f"state_agents references unknown agent: {agent_id}")
+    for state, transition in orchestrator.get("transitions", {}).items():
+        if state not in states:
+            errors.append(f"transition declared for unknown state: {state}")
+        for key, value in transition.items():
+            if key in {"next", "pass", "fail"} and value not in states:
+                errors.append(f"transition {state}.{key} references unknown state: {value}")
+    for gate_state, gate in orchestrator.get("gates", {}).items():
+        reviewer = gate["reviewer"]
+        if reviewer not in agents:
+            errors.append(f"gate {gate_state} references missing reviewer: {reviewer}")
+        for reviewed_agent in gate.get("reviews_agents", []):
+            if reviewed_agent not in agents:
+                errors.append(f"gate {gate_state} reviews missing agent: {reviewed_agent}")
+            if reviewed_agent == reviewer:
+                errors.append(f"gate {gate_state} reviewer {reviewer} is not independent")
+    return errors
+
+
+def validate_contracts(registry: dict[str, Any], contracts: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    known = contracts.get("abstract_actions", {})
+    for agent in registry["agents"]:
+        for action in agent.get("contract_actions", []):
+            if action not in known:
+                errors.append(f"agent {agent['id']} references missing contract action: {action}")
+        for dependency in agent.get("dependencies", []):
+            if dependency.startswith("contract:") and dependency.split(":", 1)[1] not in known:
+                errors.append(f"agent {agent['id']} depends on missing contract: {dependency}")
+    for skill_path in ROOT.glob("agents/*/SKILL.md"):
+        content = skill_path.read_text(encoding="utf-8")
+        for token in FORBIDDEN_TOKENS:
+            if token in content:
+                errors.append(f"{skill_path.relative_to(ROOT)} contains forbidden runtime token: {token}")
+    return errors
+
+
+def validate_required_keys(payload: dict[str, Any], schema_path: Path, label: str) -> None:
+    schema = load_json(schema_path)
+    missing = [key for key in schema["required"] if key not in payload]
+    if missing:
+        raise ControlPlaneError(f"{label} missing required keys: {', '.join(missing)}")
+
+
+def requirements_lock_path(workflow: str) -> Path:
+    return ROOT / "workflows" / workflow / "l2-planning" / "requirements-lock.json"
+
+
+def requirements_traceability_path(workflow: str) -> Path:
+    return ROOT / "workflows" / workflow / "l4-validation" / "requirements-traceability.json"
+
+
+def compute_requirements_lock_hash(payload: dict[str, Any]) -> str:
+    canonical = deepcopy(payload)
+    canonical.pop("lock_hash", None)
+    body = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def enforce_requirements_lock(state: dict[str, Any], workflow: str, state_name: str) -> None:
+    guarded_states = {
+        "L3_DEVELOP",
+        "L3_CODE_REVIEW",
+        "L3_SECURITY_AUDIT",
+        "L4_VALIDATE",
+        "L4_REVIEW",
+        "L5_DEPLOY",
+        "L5_REVIEW",
+        "DONE"
+    }
+    if state_name not in guarded_states:
+        return
+    lock_path = requirements_lock_path(workflow)
+    if not lock_path.exists():
+        raise ControlPlaneError(f"missing locked requirements artifact: {lock_path.relative_to(ROOT)}")
+    payload = load_json(lock_path)
+    validate_required_keys(payload, REQUIREMENTS_LOCK_SCHEMA_PATH, lock_path.relative_to(ROOT).as_posix())
+    computed_hash = compute_requirements_lock_hash(payload)
+    state_hash = state.get("requirements_lock_hash")
+    if not state_hash:
+        raise ControlPlaneError("workflow state is missing requirements_lock_hash")
+    if payload.get("lock_hash") != computed_hash:
+        raise ControlPlaneError(f"{lock_path.relative_to(ROOT)} contains an invalid lock_hash")
+    if state_hash != computed_hash:
+        raise ControlPlaneError("workflow requirements_lock_hash does not match requirements-lock.json")
+
+
+def validate_skill_contract_mentions(registry: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for agent in registry["agents"]:
+        skill_path = ROOT / agent["entrypoint"]
+        if not skill_path.exists():
+            errors.append(f"missing skill file for agent {agent['id']}: {skill_path.relative_to(ROOT)}")
+            continue
+        content = skill_path.read_text(encoding="utf-8")
+        for action in agent.get("contract_actions", []):
+            if f"`{action}`" not in content:
+                errors.append(f"{skill_path.relative_to(ROOT)} does not mention required contract `{action}`")
+    return errors
+
+
+def expected_agent_payload(agent: dict[str, Any]) -> dict[str, Any]:
+    return deepcopy(agent)
+
+
+def sync_agent_metadata(check_only: bool = False) -> list[str]:
+    registry, _, _ = get_context()
+    messages: list[str] = []
+    for agent in registry["agents"]:
+        target_path = ROOT / "agents" / agent["id"] / "agent.json"
+        if not target_path.parent.exists():
+            messages.append(f"missing agent directory for {agent['id']}")
+            continue
+        desired = expected_agent_payload(agent)
+        actual = load_json(target_path) if target_path.exists() else None
+        if normalize(actual) != normalize(desired):
+            if check_only:
+                messages.append(f"derived metadata drift: {target_path.relative_to(ROOT)}")
+            else:
+                write_json(target_path, desired)
+                messages.append(f"synced {target_path.relative_to(ROOT)}")
+    return messages
+
+
+def ensure_skill_symlinks() -> list[str]:
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    messages: list[str] = []
+    for skill_dir in sorted((ROOT / "agents").iterdir()):
+        if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
+            continue
+        target = SKILLS_DIR / skill_dir.name
+        if target.is_symlink() or target.exists():
+            if target.is_symlink() and target.resolve() == skill_dir.resolve():
+                messages.append(f"linked {skill_dir.name}")
+                continue
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        target.symlink_to(skill_dir)
+        messages.append(f"linked {skill_dir.name}")
+    return messages
+
+
+def doctor() -> list[str]:
+    registry, orchestrator, contracts = get_context()
+    errors: list[str] = []
+    errors.extend(validate_registry_schema(registry))
+    errors.extend(validate_orchestrator(registry, orchestrator))
+    errors.extend(validate_contracts(registry, contracts))
+    errors.extend(validate_skill_contract_mentions(registry))
+    errors.extend(sync_agent_metadata(check_only=True))
+    if errors:
+        raise ControlPlaneError("\n".join(errors))
+    return ["registry schema valid", "orchestrator valid", "tool contracts valid", "skill contracts valid", "agent metadata synced"]
+
+
+def state_path(workflow: str) -> Path:
+    return ROOT / "workflows" / workflow / "state.json"
+
+
+def initialize_workflow(workflow: str) -> dict[str, Any]:
+    workflow_root = ROOT / "workflows" / workflow
+    for path in [
+        workflow_root / "l1-intelligence",
+        workflow_root / "l2-planning",
+        workflow_root / "l3-dev" / "frontend",
+        workflow_root / "l3-dev" / "backend",
+        workflow_root / "l4-validation",
+        workflow_root / "l5-release"
+    ]:
+        path.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "workflow_id": workflow,
+        "current_state": "INIT",
+        "started_at": utc_now(),
+        "history": [],
+        "blockers": [],
+        "retries": {},
+        "requirements_lock_hash": None
+    }
+    write_json(state_path(workflow), payload)
+    return payload
+
+
+def load_state(workflow: str) -> dict[str, Any]:
+    target = state_path(workflow)
+    if not target.exists():
+        raise ControlPlaneError(f"workflow state missing: {target.relative_to(ROOT)}")
+    return load_json(target)
+
+
+def validate_workflow_id(workflow: str) -> None:
+    if not WORKFLOW_ID_PATTERN.fullmatch(workflow):
+        raise ControlPlaneError("workflow id must match ^[a-z0-9][a-z0-9-_]{1,62}$")
+
+
+def validate_inputs(agent: dict[str, Any], workflow: str) -> None:
+    missing = []
+    for item in agent.get("inputs", []):
+        optional = item.endswith("?")
+        raw = item[:-1] if optional else item
+        if raw.startswith("human:"):
+            continue
+        if not render_template(raw, workflow).exists() and not optional:
+            missing.append(item)
+    if missing:
+        raise ControlPlaneError(f"agent {agent['id']} missing required inputs: {', '.join(missing)}")
+
+
+def validate_dependencies(agent: dict[str, Any], contracts: dict[str, Any]) -> None:
+    known = contracts["abstract_actions"]
+    for dependency in agent.get("dependencies", []):
+        if dependency.startswith("contract:"):
+            action = dependency.split(":", 1)[1]
+            if action not in known:
+                raise ControlPlaneError(f"agent {agent['id']} depends on unknown contract: {action}")
+
+
+def pre_agent_run(agent_id: str, workflow: str) -> list[str]:
+    validate_workflow_id(workflow)
+    registry, _, contracts = get_context()
+    agents = registry_by_id(registry)
+    if agent_id not in agents:
+        raise ControlPlaneError(f"agent {agent_id} not found in registry")
+    if agent_id == "orchestrator" and not state_path(workflow).exists():
+        state = initialize_workflow(workflow)
+    else:
+        state = load_state(workflow)
+    enforce_requirements_lock(state, workflow, state["current_state"])
+    if agents[agent_id]["allowed_states"] and state["current_state"] not in agents[agent_id]["allowed_states"]:
+        raise ControlPlaneError(f"agent {agent_id} is not allowed in state {state['current_state']}")
+    validate_inputs(agents[agent_id], workflow)
+    validate_dependencies(agents[agent_id], contracts)
+    return [f"pre-run validation passed for {agent_id} in workflow {workflow}"]
+
+
+def validate_review_artifact(path: Path, expected_reviewer: str, min_score: float) -> None:
+    payload = load_json(path)
+    for key in ["score", "reviewer", "blockers", "suggestions", "approved_at"]:
+        if key not in payload:
+            raise ControlPlaneError(f"{path.relative_to(ROOT)} missing review key: {key}")
+    if payload["reviewer"] != expected_reviewer:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} reviewer mismatch: expected {expected_reviewer}, got {payload['reviewer']}")
+    if not isinstance(payload["score"], (int, float)):
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} score must be numeric")
+    if not isinstance(payload["blockers"], list) or not isinstance(payload["suggestions"], list):
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} blockers and suggestions must be lists")
+    if payload["score"] < min_score and not payload["blockers"]:
+        raise ControlPlaneError(f"{path.relative_to(ROOT)} score below threshold {min_score} without blockers")
+
+
+def validate_outputs(agent_id: str, workflow: str, state_name: str) -> None:
+    registry, orchestrator, _ = get_context()
+    agents = registry_by_id(registry)
+    if state_name in orchestrator["gates"]:
+        gate = orchestrator["gates"][state_name]
+        artifact_dir = render_template(gate["artifact_dir"], workflow)
+        for output_name in gate["required_outputs"]:
+            target = artifact_dir / output_name
+            if not target.exists():
+                raise ControlPlaneError(f"missing gate output: {target.relative_to(ROOT)}")
+        validate_review_artifact(artifact_dir / "review-passed.json", gate["reviewer"], gate["min_score"])
+        return
+    for item in agents[agent_id]["outputs"]:
+        target = render_template(item, workflow)
+        if item.endswith("/"):
+            if not target.exists() or not target.is_dir():
+                raise ControlPlaneError(f"missing output directory: {target.relative_to(ROOT)}")
+            if not any(target.iterdir()):
+                raise ControlPlaneError(f"output directory is empty: {target.relative_to(ROOT)}")
+        else:
+            if not target.exists():
+                raise ControlPlaneError(f"missing output file: {target.relative_to(ROOT)}")
+
+
+def git(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=str(cwd or ROOT), check=check, text=True, capture_output=True)
+
+
+def post_agent_run(agent_id: str, workflow: str) -> list[str]:
+    state = load_state(workflow)
+    validate_outputs(agent_id, workflow, state["current_state"])
+    if state["current_state"] == "L2_PLANNING":
+        lock_path = requirements_lock_path(workflow)
+        payload = load_json(lock_path)
+        validate_required_keys(payload, REQUIREMENTS_LOCK_SCHEMA_PATH, lock_path.relative_to(ROOT).as_posix())
+        lock_hash = compute_requirements_lock_hash(payload)
+        payload["lock_hash"] = lock_hash
+        write_json(lock_path, payload)
+        state["requirements_lock_hash"] = lock_hash
+        write_json(state_path(workflow), state)
+    elif state["current_state"] == "L4_VALIDATE":
+        traceability_path = requirements_traceability_path(workflow)
+        payload = load_json(traceability_path)
+        validate_required_keys(payload, REQUIREMENTS_TRACEABILITY_SCHEMA_PATH, traceability_path.relative_to(ROOT).as_posix())
+        if payload["requirements_lock_hash"] != state.get("requirements_lock_hash"):
+            raise ControlPlaneError("requirements traceability hash does not match the locked workflow requirements")
+    else:
+        enforce_requirements_lock(state, workflow, state["current_state"])
+    workflow_dir = ROOT / "workflows" / workflow
+    git("add", str(workflow_dir))
+    diff = git("diff", "--cached", "--quiet", check=False)
+    if diff.returncode == 0:
+        return [f"no workflow changes to commit for {workflow}"]
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    git("commit", "-m", f"[AEGIS-RUN] agent={agent_id} workflow={workflow} state={state['current_state']} ts={stamp}")
+    tag_name = f"workflow/{workflow}/{state['current_state']}-{stamp}"
+    git("tag", tag_name)
+    return [f"committed workflow changes for {workflow}", f"tagged {tag_name}"]
+
+
+def workflow_dry_run() -> list[str]:
+    _, orchestrator, _ = get_context()
+    trace = [orchestrator["initial_state"]]
+    state = trace[0]
+    while state not in {"DONE", "BLOCKED"}:
+        transition = orchestrator["transitions"][state]
+        state = transition.get("next") or transition.get("pass")
+        if not state:
+            raise ControlPlaneError(f"cannot dry-run state {trace[-1]}")
+        trace.append(state)
+    return trace
+
+
+def ensure_cron() -> list[str]:
+    cron_line = f"0 2 * * * {ROOT}/.aegis/schedules/nightly-evolution.sh >> /tmp/aegis-evolution.log 2>&1"
+    current = subprocess.run(["crontab", "-l"], text=True, capture_output=True, check=False)
+    lines = [line for line in current.stdout.splitlines() if line.strip()]
+    if cron_line not in lines:
+        lines.append(cron_line)
+        subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", text=True, check=True)
+        return ["installed nightly evolution cron"]
+    return ["nightly evolution cron already present"]
+
+
+def evaluate_agent(agent: dict[str, Any], content: str) -> float:
+    score = 5.0
+    if "## Runtime Contracts" in content:
+        score += 1.0
+    if "## Inputs" in content:
+        score += 0.75
+    if "## Outputs" in content:
+        score += 0.75
+    if "mission" in content.lower():
+        score += 0.5
+    if "must not" in content.lower() or "Do not" in content:
+        score += 0.5
+    if all(f"`{action}`" in content for action in agent.get("contract_actions", [])):
+        score += 1.0
+    if not any(token in content for token in FORBIDDEN_TOKENS):
+        score += 1.0
+    return min(round(score, 2), 10.0)
+
+
+def optimize_skill_content(agent: dict[str, Any], content: str) -> str:
+    if "## Runtime Contracts" not in content:
+        block = "\n## Runtime Contracts\n\nThis agent relies on the following abstract actions:\n" + "\n".join(f"- `{action}`" for action in agent.get("contract_actions", [])) + "\n"
+        marker = "\n## Inputs"
+        if marker in content:
+            content = content.replace(marker, block + marker, 1)
+    replacements = {
+        "WebSearch": "`search_web`",
+        "AskUserQuestion": "`ask_user`",
+        "mcp__fetch__fetch": "`fetch_source`",
+        "superpowers:writing-plans": "`write_plan`",
+        "superpowers:test-driven-development": "`run_test_driven_cycle`",
+        "superpowers:verification-before-completion": "`run_verification`",
+        "Agent({": "`spawn_agent` contract payload"
+    }
+    for source, target in replacements.items():
+        content = content.replace(source, target)
+    return content
+
+
+def append_evolution_log(entry: dict[str, Any]) -> None:
+    payload = load_json(EVOLUTION_LOG_PATH)
+    payload.setdefault("entries", []).append(entry)
+    write_json(EVOLUTION_LOG_PATH, payload)
+
+
+def run_doctor_in(path: Path) -> None:
+    subprocess.run([sys.executable, "-m", "tools.control_plane", "doctor"], cwd=str(path), check=True)
+
+
+def evolution_run() -> list[str]:
+    doctor()
+    registry = load_json(REGISTRY_PATH)
+    branch = f"auto-evolve-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    worktree_base = Path(tempfile.gettempdir()) / "aegis-evolution"
+    worktree_path = worktree_base / branch
+    worktree_base.mkdir(parents=True, exist_ok=True)
+    git("worktree", "add", str(worktree_path), "-b", branch)
+    messages: list[str] = []
+    try:
+        run_doctor_in(worktree_path)
+        work_registry = load_json(worktree_path / ".aegis/core/registry.json")
+        for agent in work_registry["agents"]:
+            if not agent.get("evolution"):
+                continue
+            skill_path = worktree_path / agent["entrypoint"]
+            original = skill_path.read_text(encoding="utf-8")
+            baseline = evaluate_agent(agent, original)
+            candidate = optimize_skill_content(agent, original)
+            if candidate == original:
+                append_evolution_log({
+                    "timestamp": utc_now(),
+                    "agent_id": agent["id"],
+                    "baseline_score": baseline,
+                    "candidate_score": baseline,
+                    "result": "no-op",
+                    "reason": "optimizer found no deterministic improvement",
+                    "commit": None,
+                    "rubric": "shared-contexts/review-rubric-8dim.json"
+                })
+                messages.append(f"{agent['id']}: no deterministic improvement")
+                continue
+            skill_path.write_text(candidate, encoding="utf-8")
+            subprocess.run([sys.executable, "-m", "tools.control_plane", "sync-agent-metadata"], cwd=str(worktree_path), check=True)
+            candidate_score = evaluate_agent(agent, candidate)
+            if candidate_score <= baseline:
+                skill_path.write_text(original, encoding="utf-8")
+                subprocess.run([sys.executable, "-m", "tools.control_plane", "sync-agent-metadata"], cwd=str(worktree_path), check=True)
+                append_evolution_log({
+                    "timestamp": utc_now(),
+                    "agent_id": agent["id"],
+                    "baseline_score": baseline,
+                    "candidate_score": candidate_score,
+                    "result": "revert",
+                    "reason": "candidate score did not improve",
+                    "commit": None,
+                    "rubric": "shared-contexts/review-rubric-8dim.json"
+                })
+                messages.append(f"{agent['id']}: reverted candidate (score {candidate_score} <= {baseline})")
+                continue
+            run_doctor_in(worktree_path)
+            subprocess.run(["git", "add", str(skill_path.relative_to(worktree_path)), "agents", ".aegis/core"], cwd=str(worktree_path), check=True)
+            subprocess.run(["git", "commit", "-m", f"[AEGIS-EVOLVE] {agent['id']}: {baseline:.2f} -> {candidate_score:.2f}"], cwd=str(worktree_path), check=True)
+            commit_hash = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(worktree_path), text=True, capture_output=True, check=True).stdout.strip()
+            append_evolution_log({
+                "timestamp": utc_now(),
+                "agent_id": agent["id"],
+                "baseline_score": baseline,
+                "candidate_score": candidate_score,
+                "result": "keep",
+                "reason": "candidate improved score and passed doctor",
+                "commit": commit_hash,
+                "rubric": "shared-contexts/review-rubric-8dim.json"
+            })
+            messages.append(f"{agent['id']}: kept candidate {baseline:.2f} -> {candidate_score:.2f}")
+        return messages or ["no evolvable agents changed"]
+    finally:
+        git("worktree", "remove", str(worktree_path), check=False)
+        git("branch", "-D", branch, check=False)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="AEGIS control-plane tooling")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("doctor")
+    sub.add_parser("validate")
+    sub.add_parser("sync-agent-metadata")
+    sub.add_parser("sync-agents")
+    sub.add_parser("workflow-dry-run")
+    sub.add_parser("install-cron")
+    pre = sub.add_parser("pre-agent-run")
+    pre.add_argument("--agent", required=True)
+    pre.add_argument("--workflow", required=True)
+    post = sub.add_parser("post-agent-run")
+    post.add_argument("--agent", required=True)
+    post.add_argument("--workflow", required=True)
+    sub.add_parser("evolution-run")
+    args = parser.parse_args(argv)
+    try:
+        if args.command in {"doctor", "validate"}:
+            result = doctor()
+        elif args.command == "sync-agent-metadata":
+            result = sync_agent_metadata(check_only=False)
+        elif args.command == "sync-agents":
+            result = ensure_skill_symlinks()
+        elif args.command == "workflow-dry-run":
+            result = workflow_dry_run()
+        elif args.command == "install-cron":
+            result = ensure_cron()
+        elif args.command == "pre-agent-run":
+            result = pre_agent_run(args.agent, args.workflow)
+        elif args.command == "post-agent-run":
+            result = post_agent_run(args.agent, args.workflow)
+        elif args.command == "evolution-run":
+            result = evolution_run()
+        else:
+            raise ControlPlaneError(f"unsupported command: {args.command}")
+        for line in result:
+            print(line)
+        return 0
+    except ControlPlaneError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as exc:
+        print(exc.stderr or str(exc), file=sys.stderr)
+        return 1

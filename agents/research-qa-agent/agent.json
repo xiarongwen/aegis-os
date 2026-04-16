@@ -1,0 +1,39 @@
+{
+  "id": "research-qa-agent",
+  "name": "Research QA Agent",
+  "version": "1.1.0",
+  "entrypoint": "agents/research-qa-agent/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "gate-reviewer",
+  "allowed_states": [
+    "L1_REVIEW",
+    "L2_REVIEW",
+    "L4_REVIEW",
+    "L5_REVIEW"
+  ],
+  "contract_actions": [
+    "run_gate_review",
+    "run_verification"
+  ],
+  "inputs": [
+    "workflows/{workflow}/l1-intelligence/",
+    "workflows/{workflow}/l2-planning/",
+    "workflows/{workflow}/l4-validation/",
+    "workflows/{workflow}/l5-release/"
+  ],
+  "outputs": [
+    "gate-review-report.md",
+    "review-passed.json"
+  ],
+  "dependencies": [
+    "contract:run_gate_review",
+    "contract:run_verification"
+  ],
+  "description": "Independent reviewer for research, planning, QA, and release gates.",
+  "metrics": {
+    "last_score": 8.0,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

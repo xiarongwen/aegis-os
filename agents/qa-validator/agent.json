@@ -1,16 +1,37 @@
 {
   "id": "qa-validator",
   "name": "QA Validation Agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/qa-validator/SKILL.md",
   "enabled": true,
   "evolution": true,
-  "inputs": ["l3-dev/", "l4-validation/"],
-  "outputs": ["test-report.md", "qa-signoff.json", "review-passed.json"],
+  "role": "validator",
+  "allowed_states": [
+    "L4_VALIDATE"
+  ],
+  "contract_actions": [
+    "validate_requirements_traceability",
+    "run_verification"
+  ],
+  "inputs": [
+    "workflows/{workflow}/l2-planning/PRD.md",
+    "workflows/{workflow}/l2-planning/requirements-lock.json",
+    "workflows/{workflow}/l3-dev/",
+    "workflows/{workflow}/l4-validation/"
+  ],
+  "outputs": [
+    "workflows/{workflow}/l4-validation/test-report.md",
+    "workflows/{workflow}/l4-validation/qa-signoff.json",
+    "workflows/{workflow}/l4-validation/requirements-traceability.json"
+  ],
+  "dependencies": [
+    "contract:validate_requirements_traceability",
+    "contract:run_verification"
+  ],
+  "description": "Runs release validation, coverage checks, and acceptance traceability before the release gate.",
   "metrics": {
     "last_score": 8.0,
     "evolution_count": 0,
     "rollback_count": 0
-  },
-  "description": "Validates test execution, coverage, and acceptance criteria compliance"
+  }
 }

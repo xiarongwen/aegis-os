@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "workflow_id",
+    "source_stage",
+    "locked_at",
+    "product_goal",
+    "scope",
+    "user_stories",
+    "non_functional_requirements",
+    "assumptions",
+    "change_control",
+    "lock_hash"
+  ]
+}

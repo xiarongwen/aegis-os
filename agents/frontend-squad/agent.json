@@ -1,16 +1,37 @@
 {
   "id": "frontend-squad",
   "name": "Frontend Development Squad",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/frontend-squad/SKILL.md",
   "enabled": true,
   "evolution": true,
-  "inputs": ["PRD.md", "architecture.md", "task_breakdown.json"],
-  "outputs": ["frontend/"],
+  "role": "developer",
+  "allowed_states": [
+    "L3_DEVELOP"
+  ],
+  "contract_actions": [
+    "write_plan",
+    "run_test_driven_cycle",
+    "run_verification"
+  ],
+  "inputs": [
+    "workflows/{workflow}/l2-planning/PRD.md",
+    "workflows/{workflow}/l2-planning/architecture.md",
+    "workflows/{workflow}/l2-planning/task_breakdown.json",
+    "workflows/{workflow}/l2-planning/requirements-lock.json"
+  ],
+  "outputs": [
+    "workflows/{workflow}/l3-dev/frontend/"
+  ],
+  "dependencies": [
+    "contract:write_plan",
+    "contract:run_test_driven_cycle",
+    "contract:run_verification"
+  ],
+  "description": "Implements user-facing code with plan-first, test-first execution discipline.",
   "metrics": {
     "last_score": 7.5,
     "evolution_count": 0,
     "rollback_count": 0
-  },
-  "description": "Implements frontend code with strict TDD and plan-first discipline"
+  }
 }

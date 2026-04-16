@@ -1,104 +1,173 @@
----
-aegis_version: "1.0.0"
-name: AEGIS Orchestrator
-description: Git-Native Multi-Agent Operating System for Enterprise AI Development
----
-
-# State Machine
-states:
-  - INIT
-  - L1_RESEARCH
-  - L1_REVIEW
-  - L2_PLANNING
-  - L2_REVIEW
-  - L3_DEVELOP
-  - L3_CODE_REVIEW
-  - L3_SECURITY_AUDIT
-  - L4_VALIDATE
-  - L4_REVIEW
-  - L5_DEPLOY
-  - L5_REVIEW
-  - DONE
-  - BLOCKED
-
-transitions:
-  INIT: L1_RESEARCH
-  L1_RESEARCH: L1_REVIEW
-  L1_REVIEW:
-    pass: L2_PLANNING
-    fail: L1_RESEARCH
-    max_retries: 3
-  L2_PLANNING: L2_REVIEW
-  L2_REVIEW:
-    pass: L3_DEVELOP
-    fail: L2_PLANNING
-    max_retries: 3
-  L3_DEVELOP: L3_CODE_REVIEW
-  L3_CODE_REVIEW:
-    pass: L3_SECURITY_AUDIT
-    fail: L3_DEVELOP
-    max_retries: 3
-  L3_SECURITY_AUDIT:
-    pass: L4_VALIDATE
-    fail: BLOCKED
-    max_retries: 0
-  L4_VALIDATE: L4_REVIEW
-  L4_REVIEW:
-    pass: L5_DEPLOY
-    fail: L4_VALIDATE
-    max_retries: 3
-  L5_DEPLOY: L5_REVIEW
-  L5_REVIEW:
-    pass: DONE
-    fail: BLOCKED
-    max_retries: 0
-
-# Gate Configuration
-gates:
-  L1_REVIEW:
-    reviewer: research-qa-agent
-    rubric: shared-contexts/review-rubric-8dim.json
-    min_score: 8.0
-  L2_REVIEW:
-    reviewer: prd-architect
-    rubric: shared-contexts/review-rubric-8dim.json
-    min_score: 8.0
-  L3_CODE_REVIEW:
-    reviewer: code-reviewer
-    rubric: shared-contexts/review-rubric-8dim.json
-    min_score: 8.0
-  L3_SECURITY_AUDIT:
-    reviewer: security-auditor
-    rubric: shared-contexts/review-rubric-8dim.json
-    min_score: 9.0
-  L4_REVIEW:
-    reviewer: qa-validator
-    rubric: shared-contexts/review-rubric-8dim.json
-    min_score: 8.5
-  L5_REVIEW:
-    reviewer: deploy-sre
-    rubric: shared-contexts/review-rubric-8dim.json
-    min_score: 9.0
-    requirements:
-      - rollback_plan_exists: true
-      - post_deploy_security_scan_completed: true
-      - no_critical_server_findings: true
-
-# Directory Rules
-directory_rules:
-  market-research:    { read: [], write: [workflows/{workflow}/l1-intelligence] }
-  prd-architect:      { read: [workflows/{workflow}/l1-intelligence], write: [workflows/{workflow}/l2-planning] }
-  frontend-squad:     { read: [workflows/{workflow}/l2-planning], write: [workflows/{workflow}/l3-dev/frontend] }
-  backend-squad:      { read: [workflows/{workflow}/l2-planning], write: [workflows/{workflow}/l3-dev/backend] }
-  code-reviewer:      { read: [workflows/{workflow}/l3-dev], write: [workflows/{workflow}/l3-dev/code-review-report.md] }
-  security-auditor:   { read: [workflows/{workflow}/l3-dev], write: [workflows/{workflow}/l3-dev/security-scan-report.md] }
-  qa-validator:       { read: [workflows/{workflow}/l3-dev, workflows/{workflow}/l4-validation], write: [workflows/{workflow}/l4-validation] }
-  deploy-sre:         { read: [workflows/{workflow}/l4-validation], write: [workflows/{workflow}/l5-release] }
-
-# Evolution Configuration
-evolution:
-  schedule: "0 2 * * *"
-  engine: agents/darwin-skill/SKILL.md
-  max_rounds_per_agent: 3
-  ratchet: true
-  auto_commit: true
+{
+  "aegis_version": "1.1.0",
+  "name": "AEGIS Orchestrator",
+  "description": "Git-native multi-agent operating system control plane",
+  "initial_state": "INIT",
+  "states": [
+    "INIT",
+    "L1_RESEARCH",
+    "L1_REVIEW",
+    "L2_PLANNING",
+    "L2_REVIEW",
+    "L3_DEVELOP",
+    "L3_CODE_REVIEW",
+    "L3_SECURITY_AUDIT",
+    "L4_VALIDATE",
+    "L4_REVIEW",
+    "L5_DEPLOY",
+    "L5_REVIEW",
+    "DONE",
+    "BLOCKED"
+  ],
+  "state_agents": {
+    "INIT": ["orchestrator"],
+    "L1_RESEARCH": ["market-research"],
+    "L1_REVIEW": ["research-qa-agent"],
+    "L2_PLANNING": ["prd-architect"],
+    "L2_REVIEW": ["research-qa-agent"],
+    "L3_DEVELOP": ["frontend-squad", "backend-squad"],
+    "L3_CODE_REVIEW": ["code-reviewer"],
+    "L3_SECURITY_AUDIT": ["security-auditor"],
+    "L4_VALIDATE": ["qa-validator"],
+    "L4_REVIEW": ["research-qa-agent"],
+    "L5_DEPLOY": ["deploy-sre"],
+    "L5_REVIEW": ["research-qa-agent"],
+    "DONE": ["orchestrator"],
+    "BLOCKED": ["orchestrator"]
+  },
+  "transitions": {
+    "INIT": { "next": "L1_RESEARCH" },
+    "L1_RESEARCH": { "next": "L1_REVIEW" },
+    "L1_REVIEW": { "pass": "L2_PLANNING", "fail": "L1_RESEARCH", "max_retries": 3 },
+    "L2_PLANNING": { "next": "L2_REVIEW" },
+    "L2_REVIEW": { "pass": "L3_DEVELOP", "fail": "L2_PLANNING", "max_retries": 3 },
+    "L3_DEVELOP": { "next": "L3_CODE_REVIEW" },
+    "L3_CODE_REVIEW": { "pass": "L3_SECURITY_AUDIT", "fail": "L3_DEVELOP", "max_retries": 3 },
+    "L3_SECURITY_AUDIT": { "pass": "L4_VALIDATE", "fail": "BLOCKED", "max_retries": 0 },
+    "L4_VALIDATE": { "next": "L4_REVIEW" },
+    "L4_REVIEW": { "pass": "L5_DEPLOY", "fail": "L4_VALIDATE", "max_retries": 3 },
+    "L5_DEPLOY": { "next": "L5_REVIEW" },
+    "L5_REVIEW": { "pass": "DONE", "fail": "BLOCKED", "max_retries": 0 }
+  },
+  "gates": {
+    "L1_REVIEW": {
+      "reviewer": "research-qa-agent",
+      "reviews_agents": ["market-research"],
+      "artifact_dir": "workflows/{workflow}/l1-intelligence",
+      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "rubric": "shared-contexts/review-rubric-8dim.json",
+      "min_score": 8.0
+    },
+    "L2_REVIEW": {
+      "reviewer": "research-qa-agent",
+      "reviews_agents": ["prd-architect"],
+      "artifact_dir": "workflows/{workflow}/l2-planning",
+      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "rubric": "shared-contexts/review-rubric-8dim.json",
+      "min_score": 8.0
+    },
+    "L3_CODE_REVIEW": {
+      "reviewer": "code-reviewer",
+      "reviews_agents": ["frontend-squad", "backend-squad"],
+      "artifact_dir": "workflows/{workflow}/l3-dev",
+      "required_outputs": ["code-review-report.md", "review-passed.json"],
+      "rubric": "shared-contexts/review-rubric-8dim.json",
+      "min_score": 8.0
+    },
+    "L3_SECURITY_AUDIT": {
+      "reviewer": "security-auditor",
+      "reviews_agents": ["frontend-squad", "backend-squad"],
+      "artifact_dir": "workflows/{workflow}/l3-dev",
+      "required_outputs": ["security-scan-report.md", "review-passed.json"],
+      "rubric": "shared-contexts/review-rubric-8dim.json",
+      "min_score": 9.0
+    },
+    "L4_REVIEW": {
+      "reviewer": "research-qa-agent",
+      "reviews_agents": ["qa-validator"],
+      "artifact_dir": "workflows/{workflow}/l4-validation",
+      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "rubric": "shared-contexts/review-rubric-8dim.json",
+      "min_score": 8.5
+    },
+    "L5_REVIEW": {
+      "reviewer": "research-qa-agent",
+      "reviews_agents": ["deploy-sre"],
+      "artifact_dir": "workflows/{workflow}/l5-release",
+      "required_outputs": ["review-passed.json", "gate-review-report.md"],
+      "rubric": "shared-contexts/review-rubric-8dim.json",
+      "min_score": 9.0,
+      "requirements": {
+        "rollback_plan_exists": true,
+        "post_deploy_security_scan_completed": true,
+        "no_critical_server_findings": true
+      }
+    }
+  },
+  "directory_rules": {
+    "market-research": {
+      "read": [],
+      "write": ["workflows/{workflow}/l1-intelligence"]
+    },
+    "research-qa-agent": {
+      "read": [
+        "workflows/{workflow}/l1-intelligence",
+        "workflows/{workflow}/l2-planning",
+        "workflows/{workflow}/l4-validation",
+        "workflows/{workflow}/l5-release"
+      ],
+      "write": [
+        "workflows/{workflow}/l1-intelligence",
+        "workflows/{workflow}/l2-planning",
+        "workflows/{workflow}/l4-validation",
+        "workflows/{workflow}/l5-release"
+      ]
+    },
+    "prd-architect": {
+      "read": ["workflows/{workflow}/l1-intelligence"],
+      "write": ["workflows/{workflow}/l2-planning"]
+    },
+    "frontend-squad": {
+      "read": ["workflows/{workflow}/l2-planning"],
+      "write": ["workflows/{workflow}/l3-dev/frontend"]
+    },
+    "backend-squad": {
+      "read": ["workflows/{workflow}/l2-planning"],
+      "write": ["workflows/{workflow}/l3-dev/backend"]
+    },
+    "code-reviewer": {
+      "read": ["workflows/{workflow}/l2-planning", "workflows/{workflow}/l3-dev"],
+      "write": ["workflows/{workflow}/l3-dev"]
+    },
+    "security-auditor": {
+      "read": ["workflows/{workflow}/l3-dev"],
+      "write": ["workflows/{workflow}/l3-dev"]
+    },
+    "qa-validator": {
+      "read": ["workflows/{workflow}/l2-planning", "workflows/{workflow}/l3-dev", "workflows/{workflow}/l4-validation"],
+      "write": ["workflows/{workflow}/l4-validation"]
+    },
+    "deploy-sre": {
+      "read": ["workflows/{workflow}/l2-planning", "workflows/{workflow}/l3-dev", "workflows/{workflow}/l4-validation"],
+      "write": ["workflows/{workflow}/l5-release"]
+    },
+    "darwin-skill": {
+      "read": ["agents", ".aegis/core", "shared-contexts"],
+      "write": ["agents", ".aegis/core"]
+    }
+  },
+  "review_artifact_schema": {
+    "required": ["score", "reviewer", "blockers", "suggestions", "approved_at"],
+    "numeric_fields": ["score"],
+    "list_fields": ["blockers", "suggestions"]
+  },
+  "evolution": {
+    "schedule": "0 2 * * *",
+    "engine": "darwin-skill",
+    "log_file": ".aegis/core/evolution.log",
+    "rubric": "shared-contexts/review-rubric-8dim.json",
+    "max_rounds_per_agent": 3,
+    "ratchet": true,
+    "require_doctor": true
+  }
+}

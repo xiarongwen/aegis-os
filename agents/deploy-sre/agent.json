@@ -1,16 +1,39 @@
 {
   "id": "deploy-sre",
   "name": "Deploy SRE Agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/deploy-sre/SKILL.md",
   "enabled": true,
   "evolution": true,
-  "inputs": ["l4-validation/"],
-  "outputs": ["deployment-plan.md", "deployment-log.md", "rollback-plan.md", "monitoring-checklist.md", "post-deploy-security-scan-report.md", "review-passed.json"],
+  "role": "release-engineer",
+  "allowed_states": [
+    "L5_DEPLOY"
+  ],
+  "contract_actions": [
+    "ask_user",
+    "run_verification"
+  ],
+  "inputs": [
+    "workflows/{workflow}/l2-planning/architecture.md",
+    "workflows/{workflow}/l2-planning/requirements-lock.json",
+    "workflows/{workflow}/l3-dev/",
+    "workflows/{workflow}/l4-validation/"
+  ],
+  "outputs": [
+    "workflows/{workflow}/l5-release/deployment-plan.md",
+    "workflows/{workflow}/l5-release/deployment-log.md",
+    "workflows/{workflow}/l5-release/rollback-plan.md",
+    "workflows/{workflow}/l5-release/monitoring-checklist.md",
+    "workflows/{workflow}/l5-release/post-deploy-security-scan-report.md"
+  ],
+  "dependencies": [
+    "contract:ask_user",
+    "contract:run_verification"
+  ],
+  "description": "Executes safe deployment, rollback planning, and post-deploy operational verification.",
   "metrics": {
     "last_score": 8.5,
     "evolution_count": 0,
     "rollback_count": 0
-  },
-  "description": "Deploys to target servers, runs post-deploy security scans, and manages rollback planning"
+  }
 }

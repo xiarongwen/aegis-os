@@ -1,16 +1,34 @@
 {
   "id": "code-reviewer",
   "name": "Code Review Agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/code-reviewer/SKILL.md",
   "enabled": true,
   "evolution": true,
-  "inputs": ["l3-dev/"],
-  "outputs": ["code-review-report.md", "review-passed.json"],
+  "role": "code-reviewer",
+  "allowed_states": [
+    "L3_CODE_REVIEW"
+  ],
+  "contract_actions": [
+    "run_gate_review",
+    "run_verification"
+  ],
+  "inputs": [
+    "workflows/{workflow}/l2-planning/PRD.md",
+    "workflows/{workflow}/l3-dev/"
+  ],
+  "outputs": [
+    "workflows/{workflow}/l3-dev/code-review-report.md",
+    "workflows/{workflow}/l3-dev/review-passed.json"
+  ],
+  "dependencies": [
+    "contract:run_gate_review",
+    "contract:run_verification"
+  ],
+  "description": "Independent code quality and architecture reviewer for development artifacts.",
   "metrics": {
     "last_score": 8.0,
     "evolution_count": 0,
     "rollback_count": 0
-  },
-  "description": "Independent code quality reviewer. Must never be the same instance as the development agent."
+  }
 }

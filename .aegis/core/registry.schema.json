@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AEGIS Registry",
+  "type": "object",
+  "required": ["version", "last_updated", "agents"],
+  "properties": {
+    "version": { "type": "string" },
+    "last_updated": { "type": "string" },
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "entrypoint",
+          "enabled",
+          "evolution",
+          "role",
+          "allowed_states",
+          "contract_actions",
+          "inputs",
+          "outputs",
+          "dependencies",
+          "description",
+          "metrics"
+        ]
+      }
+    }
+  }
+}

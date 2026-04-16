@@ -1,13 +1,36 @@
 {
   "id": "orchestrator",
   "name": "AEGIS Orchestrator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/orchestrator/SKILL.md",
   "enabled": true,
   "evolution": false,
-  "description": "Git-native workflow engine that drives the multi-agent system from L0 to L5",
+  "role": "control-plane",
+  "allowed_states": [
+    "INIT",
+    "DONE",
+    "BLOCKED"
+  ],
+  "contract_actions": [
+    "spawn_agent",
+    "run_gate_review",
+    "write_state",
+    "sync_agent_metadata"
+  ],
+  "inputs": [
+    "human:workflow_request"
+  ],
+  "outputs": [
+    "workflows/{workflow}/state.json"
+  ],
+  "dependencies": [
+    "contract:spawn_agent",
+    "contract:run_gate_review",
+    "contract:write_state"
+  ],
+  "description": "Git-native workflow engine that drives the multi-agent system from INIT through gated completion.",
   "metrics": {
-    "last_score": 10.0,
+    "last_score": 9.5,
     "evolution_count": 0,
     "rollback_count": 0
   }

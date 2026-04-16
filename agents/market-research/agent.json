@@ -1,17 +1,37 @@
 {
   "id": "market-research",
   "name": "Market Research Agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/market-research/SKILL.md",
   "enabled": true,
   "evolution": true,
-  "dependencies": ["agent-browser", "web-search"],
-  "inputs": ["product_idea", "target_market"],
-  "outputs": ["market_report.md", "competitive_analysis.md", "tech_feasibility.md"],
+  "role": "research",
+  "allowed_states": [
+    "L1_RESEARCH"
+  ],
+  "contract_actions": [
+    "search_web",
+    "fetch_source",
+    "run_verification"
+  ],
+  "inputs": [
+    "human:product_idea",
+    "human:target_market?"
+  ],
+  "outputs": [
+    "workflows/{workflow}/l1-intelligence/market_report.md",
+    "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
+    "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+  ],
+  "dependencies": [
+    "contract:search_web",
+    "contract:fetch_source",
+    "contract:run_verification"
+  ],
+  "description": "Conducts source-backed market research, competition analysis, and feasibility framing.",
   "metrics": {
     "last_score": 7.5,
     "evolution_count": 0,
     "rollback_count": 0
-  },
-  "description": "Conducts rigorous market research and competitive analysis with verifiable data sources"
+  }
 }

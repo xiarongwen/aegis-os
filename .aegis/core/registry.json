@@ -1,103 +1,230 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "last_updated": "2026-04-16",
   "agents": [
     {
       "id": "orchestrator",
       "name": "AEGIS Orchestrator",
+      "version": "1.1.0",
       "entrypoint": "agents/orchestrator/SKILL.md",
       "enabled": true,
       "evolution": false,
-      "description": "Core workflow engine and state machine driver"
+      "role": "control-plane",
+      "allowed_states": ["INIT", "DONE", "BLOCKED"],
+      "contract_actions": ["spawn_agent", "run_gate_review", "write_state", "sync_agent_metadata"],
+      "inputs": ["human:workflow_request"],
+      "outputs": ["workflows/{workflow}/state.json"],
+      "dependencies": ["contract:spawn_agent", "contract:run_gate_review", "contract:write_state"],
+      "description": "Git-native workflow engine that drives the multi-agent system from INIT through gated completion.",
+      "metrics": { "last_score": 9.5, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "market-research",
       "name": "Market Research Agent",
+      "version": "1.1.0",
       "entrypoint": "agents/market-research/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "dependencies": ["agent-browser"],
-      "inputs": ["product_idea", "target_market"],
-      "outputs": ["market_report.md", "competitive_analysis.md"],
-      "description": "Conducts market research and competitive analysis"
+      "role": "research",
+      "allowed_states": ["L1_RESEARCH"],
+      "contract_actions": ["search_web", "fetch_source", "run_verification"],
+      "inputs": ["human:product_idea", "human:target_market?"],
+      "outputs": [
+        "workflows/{workflow}/l1-intelligence/market_report.md",
+        "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
+        "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+      ],
+      "dependencies": ["contract:search_web", "contract:fetch_source", "contract:run_verification"],
+      "description": "Conducts source-backed market research, competition analysis, and feasibility framing.",
+      "metrics": { "last_score": 7.5, "evolution_count": 0, "rollback_count": 0 }
+    },
+    {
+      "id": "research-qa-agent",
+      "name": "Research QA Agent",
+      "version": "1.1.0",
+      "entrypoint": "agents/research-qa-agent/SKILL.md",
+      "enabled": true,
+      "evolution": true,
+      "role": "gate-reviewer",
+      "allowed_states": ["L1_REVIEW", "L2_REVIEW", "L4_REVIEW", "L5_REVIEW"],
+      "contract_actions": ["run_gate_review", "run_verification"],
+      "inputs": [
+        "workflows/{workflow}/l1-intelligence/",
+        "workflows/{workflow}/l2-planning/",
+        "workflows/{workflow}/l4-validation/",
+        "workflows/{workflow}/l5-release/"
+      ],
+      "outputs": ["gate-review-report.md", "review-passed.json"],
+      "dependencies": ["contract:run_gate_review", "contract:run_verification"],
+      "description": "Independent reviewer for research, planning, QA, and release gates.",
+      "metrics": { "last_score": 8.0, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "prd-architect",
       "name": "PRD Architect Agent",
+      "version": "1.1.0",
       "entrypoint": "agents/prd-architect/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "inputs": ["market_report.md"],
-      "outputs": ["PRD.md", "architecture.md", "task_breakdown.json"],
-      "description": "Transforms research into PRD and technical architecture"
+      "role": "planner",
+      "allowed_states": ["L2_PLANNING"],
+      "contract_actions": ["write_plan", "lock_requirements", "run_verification"],
+      "inputs": [
+        "workflows/{workflow}/l1-intelligence/market_report.md",
+        "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
+        "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+      ],
+      "outputs": [
+        "workflows/{workflow}/l2-planning/PRD.md",
+        "workflows/{workflow}/l2-planning/architecture.md",
+        "workflows/{workflow}/l2-planning/task_breakdown.json",
+        "workflows/{workflow}/l2-planning/requirements-lock.json"
+      ],
+      "dependencies": ["contract:write_plan", "contract:lock_requirements", "contract:run_verification"],
+      "description": "Transforms research into a buildable PRD, architecture, and implementation task graph.",
+      "metrics": { "last_score": 7.5, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "frontend-squad",
       "name": "Frontend Development Squad",
+      "version": "1.1.0",
       "entrypoint": "agents/frontend-squad/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "inputs": ["PRD.md", "architecture.md"],
-      "outputs": ["frontend/"],
-      "description": "Implements frontend code with TDD"
+      "role": "developer",
+      "allowed_states": ["L3_DEVELOP"],
+      "contract_actions": ["write_plan", "run_test_driven_cycle", "run_verification"],
+      "inputs": [
+        "workflows/{workflow}/l2-planning/PRD.md",
+        "workflows/{workflow}/l2-planning/architecture.md",
+        "workflows/{workflow}/l2-planning/task_breakdown.json",
+        "workflows/{workflow}/l2-planning/requirements-lock.json"
+      ],
+      "outputs": ["workflows/{workflow}/l3-dev/frontend/"],
+      "dependencies": ["contract:write_plan", "contract:run_test_driven_cycle", "contract:run_verification"],
+      "description": "Implements user-facing code with plan-first, test-first execution discipline.",
+      "metrics": { "last_score": 7.5, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "backend-squad",
       "name": "Backend Development Squad",
+      "version": "1.1.0",
       "entrypoint": "agents/backend-squad/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "inputs": ["PRD.md", "architecture.md"],
-      "outputs": ["backend/"],
-      "description": "Implements backend code with TDD"
+      "role": "developer",
+      "allowed_states": ["L3_DEVELOP"],
+      "contract_actions": ["write_plan", "run_test_driven_cycle", "run_verification"],
+      "inputs": [
+        "workflows/{workflow}/l2-planning/PRD.md",
+        "workflows/{workflow}/l2-planning/architecture.md",
+        "workflows/{workflow}/l2-planning/task_breakdown.json",
+        "workflows/{workflow}/l2-planning/requirements-lock.json"
+      ],
+      "outputs": ["workflows/{workflow}/l3-dev/backend/"],
+      "dependencies": ["contract:write_plan", "contract:run_test_driven_cycle", "contract:run_verification"],
+      "description": "Implements backend APIs, schemas, and business logic with boundary validation and TDD discipline.",
+      "metrics": { "last_score": 7.5, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "code-reviewer",
       "name": "Code Review Agent",
+      "version": "1.1.0",
       "entrypoint": "agents/code-reviewer/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "inputs": ["l3-dev/"],
-      "outputs": ["code-review-report.md"],
-      "description": "Independent code quality and architecture reviewer"
+      "role": "code-reviewer",
+      "allowed_states": ["L3_CODE_REVIEW"],
+      "contract_actions": ["run_gate_review", "run_verification"],
+      "inputs": ["workflows/{workflow}/l2-planning/PRD.md", "workflows/{workflow}/l3-dev/"],
+      "outputs": ["workflows/{workflow}/l3-dev/code-review-report.md", "workflows/{workflow}/l3-dev/review-passed.json"],
+      "dependencies": ["contract:run_gate_review", "contract:run_verification"],
+      "description": "Independent code quality and architecture reviewer for development artifacts.",
+      "metrics": { "last_score": 8.0, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "security-auditor",
       "name": "Security Audit Agent",
+      "version": "1.1.0",
       "entrypoint": "agents/security-auditor/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "inputs": ["l3-dev/"],
-      "outputs": ["security-scan-report.md"],
-      "description": "Performs security scanning and compliance checks"
+      "role": "security-reviewer",
+      "allowed_states": ["L3_SECURITY_AUDIT"],
+      "contract_actions": ["run_gate_review", "run_verification"],
+      "inputs": ["workflows/{workflow}/l3-dev/"],
+      "outputs": ["workflows/{workflow}/l3-dev/security-scan-report.md", "workflows/{workflow}/l3-dev/review-passed.json"],
+      "dependencies": ["contract:run_gate_review", "contract:run_verification"],
+      "description": "Performs secure-code review and enforces the security veto gate.",
+      "metrics": { "last_score": 8.5, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "qa-validator",
       "name": "QA Validation Agent",
+      "version": "1.1.0",
       "entrypoint": "agents/qa-validator/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "inputs": ["l3-dev/", "l4-validation/"],
-      "outputs": ["test-report.md", "qa-signoff.json"],
-      "description": "Validates tests, coverage, and acceptance criteria"
+      "role": "validator",
+      "allowed_states": ["L4_VALIDATE"],
+      "contract_actions": ["validate_requirements_traceability", "run_verification"],
+      "inputs": [
+        "workflows/{workflow}/l2-planning/PRD.md",
+        "workflows/{workflow}/l2-planning/requirements-lock.json",
+        "workflows/{workflow}/l3-dev/",
+        "workflows/{workflow}/l4-validation/"
+      ],
+      "outputs": [
+        "workflows/{workflow}/l4-validation/test-report.md",
+        "workflows/{workflow}/l4-validation/qa-signoff.json",
+        "workflows/{workflow}/l4-validation/requirements-traceability.json"
+      ],
+      "dependencies": ["contract:validate_requirements_traceability", "contract:run_verification"],
+      "description": "Runs release validation, coverage checks, and acceptance traceability before the release gate.",
+      "metrics": { "last_score": 8.0, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "deploy-sre",
       "name": "Deploy SRE Agent",
+      "version": "1.1.0",
       "entrypoint": "agents/deploy-sre/SKILL.md",
       "enabled": true,
       "evolution": true,
-      "inputs": ["l4-validation/"],
-      "outputs": ["deployment-log.md", "rollback-plan.md"],
-      "description": "Manages deployment and release engineering"
+      "role": "release-engineer",
+      "allowed_states": ["L5_DEPLOY"],
+      "contract_actions": ["ask_user", "run_verification"],
+      "inputs": [
+        "workflows/{workflow}/l2-planning/architecture.md",
+        "workflows/{workflow}/l2-planning/requirements-lock.json",
+        "workflows/{workflow}/l3-dev/",
+        "workflows/{workflow}/l4-validation/"
+      ],
+      "outputs": [
+        "workflows/{workflow}/l5-release/deployment-plan.md",
+        "workflows/{workflow}/l5-release/deployment-log.md",
+        "workflows/{workflow}/l5-release/rollback-plan.md",
+        "workflows/{workflow}/l5-release/monitoring-checklist.md",
+        "workflows/{workflow}/l5-release/post-deploy-security-scan-report.md"
+      ],
+      "dependencies": ["contract:ask_user", "contract:run_verification"],
+      "description": "Executes safe deployment, rollback planning, and post-deploy operational verification.",
+      "metrics": { "last_score": 8.5, "evolution_count": 0, "rollback_count": 0 }
     },
     {
       "id": "darwin-skill",
       "name": "Darwin Evolution Engine",
+      "version": "1.1.0",
       "entrypoint": "agents/darwin-skill/SKILL.md",
       "enabled": true,
       "evolution": false,
-      "description": "Optimizes other agents using hill-climbing and git ratchet"
+      "role": "evolution-engine",
+      "allowed_states": [],
+      "contract_actions": ["run_verification", "sync_agent_metadata"],
+      "inputs": ["agents/", ".aegis/core/registry.json", "shared-contexts/review-rubric-8dim.json", "shared-contexts/tool-contracts.yml"],
+      "outputs": [".aegis/core/evolution.log"],
+      "dependencies": ["contract:run_verification", "contract:sync_agent_metadata"],
+      "description": "Evaluates and evolves agent instructions using a conservative ratchet and structured audit trail.",
+      "metrics": { "last_score": 8.0, "evolution_count": 0, "rollback_count": 0 }
     }
   ]
 }

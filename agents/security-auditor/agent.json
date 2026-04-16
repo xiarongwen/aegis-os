@@ -1,16 +1,33 @@
 {
   "id": "security-auditor",
   "name": "Security Audit Agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/security-auditor/SKILL.md",
   "enabled": true,
   "evolution": true,
-  "inputs": ["l3-dev/"],
-  "outputs": ["security-scan-report.md", "review-passed.json"],
+  "role": "security-reviewer",
+  "allowed_states": [
+    "L3_SECURITY_AUDIT"
+  ],
+  "contract_actions": [
+    "run_gate_review",
+    "run_verification"
+  ],
+  "inputs": [
+    "workflows/{workflow}/l3-dev/"
+  ],
+  "outputs": [
+    "workflows/{workflow}/l3-dev/security-scan-report.md",
+    "workflows/{workflow}/l3-dev/review-passed.json"
+  ],
+  "dependencies": [
+    "contract:run_gate_review",
+    "contract:run_verification"
+  ],
+  "description": "Performs secure-code review and enforces the security veto gate.",
   "metrics": {
     "last_score": 8.5,
     "evolution_count": 0,
     "rollback_count": 0
-  },
-  "description": "Security-focused reviewer. Blocks on any high or critical severity finding."
+  }
 }

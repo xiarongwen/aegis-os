@@ -1,16 +1,39 @@
 {
   "id": "prd-architect",
   "name": "PRD Architect Agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entrypoint": "agents/prd-architect/SKILL.md",
   "enabled": true,
   "evolution": true,
-  "inputs": ["market_report.md", "competitive_analysis.md", "tech_feasibility.md"],
-  "outputs": ["PRD.md", "architecture.md", "task_breakdown.json"],
+  "role": "planner",
+  "allowed_states": [
+    "L2_PLANNING"
+  ],
+  "contract_actions": [
+    "write_plan",
+    "lock_requirements",
+    "run_verification"
+  ],
+  "inputs": [
+    "workflows/{workflow}/l1-intelligence/market_report.md",
+    "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
+    "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+  ],
+  "outputs": [
+    "workflows/{workflow}/l2-planning/PRD.md",
+    "workflows/{workflow}/l2-planning/architecture.md",
+    "workflows/{workflow}/l2-planning/task_breakdown.json",
+    "workflows/{workflow}/l2-planning/requirements-lock.json"
+  ],
+  "dependencies": [
+    "contract:write_plan",
+    "contract:lock_requirements",
+    "contract:run_verification"
+  ],
+  "description": "Transforms research into a buildable PRD, architecture, and implementation task graph.",
   "metrics": {
     "last_score": 7.5,
     "evolution_count": 0,
     "rollback_count": 0
-  },
-  "description": "Transforms market research into detailed PRD, technical architecture, and executable task breakdown"
+  }
 }
