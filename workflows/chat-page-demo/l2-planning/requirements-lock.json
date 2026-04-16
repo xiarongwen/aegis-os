@@ -104,9 +104,11 @@
     "amendment_process": "Any scope change after L2_REVIEW requires a formal amendment and re-lock with a new hash.",
     "downstream_validation": [
       "L3_DEVELOP",
+      "L3_CODE_REVIEW",
+      "L3_SECURITY_AUDIT",
       "L4_VALIDATE",
       "L5_DEPLOY"
     ]
   },
-  "lock_hash": "sha256:acda2abc116a10900e0af5bc2f8f6c45c5a3e69cced2573dbe4af901fc80540a"
+  "lock_hash": "sha256:a7ddfde1bba3962634ba9b84503703b981f9ce9e0ff615384af51ffc4452bccb"
 }

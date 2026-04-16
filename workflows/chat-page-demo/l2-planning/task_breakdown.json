@@ -84,25 +84,46 @@
     "dependencies": ["T10", "T11"]
   },
   {
-    "id": "T13",
-    "title": "Implement threaded replies (backend + frontend thread pane)",
-    "owner": "frontend-squad",
-    "estimated_hours": 8,
-    "dependencies": ["T10"]
+    "id": "T13a",
+    "title": "Backend API for threaded replies",
+    "owner": "backend-squad",
+    "estimated_hours": 6,
+    "dependencies": ["T6"]
   },
   {
-    "id": "T14",
-    "title": "Implement emoji reactions API and UI",
+    "id": "T13b",
+    "title": "Implement threaded replies frontend thread pane",
     "owner": "frontend-squad",
     "estimated_hours": 6,
-    "dependencies": ["T10"]
+    "dependencies": ["T10", "T13a"]
   },
   {
-    "id": "T15",
-    "title": "Add message search API and frontend highlighting",
+    "id": "T14a",
+    "title": "Backend API for emoji reactions",
+    "owner": "backend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T6"]
+  },
+  {
+    "id": "T14b",
+    "title": "Implement emoji reactions UI",
     "owner": "frontend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T10", "T14a"]
+  },
+  {
+    "id": "T15a",
+    "title": "Backend API for message search",
+    "owner": "backend-squad",
     "estimated_hours": 6,
-    "dependencies": ["T10"]
+    "dependencies": ["T6"]
+  },
+  {
+    "id": "T15b",
+    "title": "Add message search frontend highlighting",
+    "owner": "frontend-squad",
+    "estimated_hours": 4,
+    "dependencies": ["T10", "T15a"]
   },
   {
     "id": "T16",
@@ -123,14 +144,14 @@
     "title": "Write E2E smoke tests for core chat flows",
     "owner": "frontend-squad",
     "estimated_hours": 8,
-    "dependencies": ["T12", "T13", "T14"]
+    "dependencies": ["T12", "T13b", "T14b"]
   },
   {
     "id": "T19",
-    "title": "Performance profiling and accessibility audit fixes",
+    "title": "Accessibility audit and WCAG 2.1 AA fixes",
     "owner": "frontend-squad",
     "estimated_hours": 6,
-    "dependencies": ["T18"]
+    "dependencies": ["T10"]
   },
   {
     "id": "T20",
