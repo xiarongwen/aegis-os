@@ -1,0 +1,11 @@
+{
+  "workflow_id": "chat-page-demo",
+  "current_state": "L1_RESEARCH",
+  "started_at": "2026-04-16T08:24:15Z",
+  "history": [
+    {"from": "INIT", "to": "L1_RESEARCH", "at": "2026-04-16T08:25:00Z", "agent": "orchestrator"}
+  ],
+  "blockers": [],
+  "retries": {},
+  "requirements_lock_hash": null
+}
