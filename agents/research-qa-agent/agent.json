@@ -28,10 +28,10 @@
     "run_verification"
   ],
   "inputs": [
-    "workflows/{workflow}/l1-intelligence/",
-    "workflows/{workflow}/l2-planning/",
-    "workflows/{workflow}/l4-validation/",
-    "workflows/{workflow}/l5-release/"
+    ".aegis/runs/{workflow}/l1-intelligence/",
+    ".aegis/runs/{workflow}/l2-planning/",
+    ".aegis/runs/{workflow}/l4-validation/",
+    ".aegis/runs/{workflow}/l5-release/"
   ],
   "outputs": [
     "gate-review-report.md",

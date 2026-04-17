@@ -17,7 +17,7 @@ Read from the workflow initialization or human request:
 - `product_idea`
 - `target_market` if specified
 
-## Outputs (write to `workflows/{id}/l1-intelligence/`)
+## Outputs (write to `.aegis/runs/{id}/l1-intelligence/`)
 
 - `market_report.md`
 - `competitive_analysis.md`
@@ -29,4 +29,4 @@ Read from the workflow initialization or human request:
 2. Use `fetch_source` to verify the most important claims against the source material.
 3. Synthesize the findings into structured markdown with traceable citations.
 4. Use `run_verification` to remove unsupported claims before handing off to the review gate.
-5. If a review loop is active for L1, address only the cited findings, preserve the original research scope, and write `fix-response-round-N.md` in `workflows/{id}/l1-intelligence/`.
+5. If a review loop is active for L1, address only the cited findings, preserve the original research scope, and write `fix-response-round-N.md` in `.aegis/runs/{id}/l1-intelligence/`.

@@ -13,14 +13,14 @@ Use `write_plan` before any multi-file service or schema change, use `scan_repo_
 
 ## Inputs (read-only)
 
-Read from `workflows/{id}/l2-planning/`:
+Read from `.aegis/runs/{id}/l2-planning/`:
 - `PRD.md`
 - `architecture.md`
 - `task_breakdown.json`
 - `implementation-contracts.json`
 - `requirements-lock.json`
 
-## Outputs (write to `workflows/{id}/l3-dev/backend/`)
+## Outputs (write to `.aegis/runs/{id}/l3-dev/backend/`)
 
 - API implementations
 - Data models and migrations
@@ -40,7 +40,7 @@ Read from `workflows/{id}/l2-planning/`:
 7. Treat `requirements-lock.json` as frozen scope; do not reinterpret requirements locally.
 8. Use `run_verification` to prove tests pass, migrations are reversible, and APIs satisfy locked acceptance criteria.
 9. Maintain `reuse-audit.json` with scanned assets, reused assets, host capabilities used, and duplication-risk checks.
-10. When a review loop is active, answer each finding explicitly in `workflows/{id}/l3-dev/fix-response-round-N.md` and change only what is needed to close the cited issues.
+10. When a review loop is active, answer each finding explicitly in `.aegis/runs/{id}/l3-dev/fix-response-round-N.md` and change only what is needed to close the cited issues.
 
 ## Boundaries
 

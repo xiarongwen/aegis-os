@@ -20,17 +20,17 @@
     "run_verification"
   ],
   "inputs": [
-    "workflows/{workflow}/l2-planning/architecture.md",
-    "workflows/{workflow}/l2-planning/requirements-lock.json",
-    "workflows/{workflow}/l3-dev/",
-    "workflows/{workflow}/l4-validation/"
+    ".aegis/runs/{workflow}/l2-planning/architecture.md",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json",
+    ".aegis/runs/{workflow}/l3-dev/",
+    ".aegis/runs/{workflow}/l4-validation/"
   ],
   "outputs": [
-    "workflows/{workflow}/l5-release/deployment-plan.md",
-    "workflows/{workflow}/l5-release/deployment-log.md",
-    "workflows/{workflow}/l5-release/rollback-plan.md",
-    "workflows/{workflow}/l5-release/monitoring-checklist.md",
-    "workflows/{workflow}/l5-release/post-deploy-security-scan-report.md"
+    ".aegis/runs/{workflow}/l5-release/deployment-plan.md",
+    ".aegis/runs/{workflow}/l5-release/deployment-log.md",
+    ".aegis/runs/{workflow}/l5-release/rollback-plan.md",
+    ".aegis/runs/{workflow}/l5-release/monitoring-checklist.md",
+    ".aegis/runs/{workflow}/l5-release/post-deploy-security-scan-report.md"
   ],
   "dependencies": [
     "contract:ask_user",

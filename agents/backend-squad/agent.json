@@ -23,14 +23,14 @@
     "run_verification"
   ],
   "inputs": [
-    "workflows/{workflow}/l2-planning/PRD.md",
-    "workflows/{workflow}/l2-planning/architecture.md",
-    "workflows/{workflow}/l2-planning/task_breakdown.json",
-    "workflows/{workflow}/l2-planning/implementation-contracts.json",
-    "workflows/{workflow}/l2-planning/requirements-lock.json"
+    ".aegis/runs/{workflow}/l2-planning/PRD.md",
+    ".aegis/runs/{workflow}/l2-planning/architecture.md",
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json"
   ],
   "outputs": [
-    "workflows/{workflow}/l3-dev/backend/"
+    ".aegis/runs/{workflow}/l3-dev/backend/"
   ],
   "dependencies": [
     "contract:write_plan",

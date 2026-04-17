@@ -13,13 +13,13 @@ Use `validate_requirements_traceability` to prove the locked requirements map to
 
 ## Inputs (read-only)
 
-- `workflows/{id}/l3-dev/`
-- `workflows/{id}/l2-planning/PRD.md`
-- `workflows/{id}/l2-planning/task_breakdown.json`
-- `workflows/{id}/l2-planning/implementation-contracts.json`
-- `workflows/{id}/l4-validation/`
+- `.aegis/runs/{id}/l3-dev/`
+- `.aegis/runs/{id}/l2-planning/PRD.md`
+- `.aegis/runs/{id}/l2-planning/task_breakdown.json`
+- `.aegis/runs/{id}/l2-planning/implementation-contracts.json`
+- `.aegis/runs/{id}/l4-validation/`
 
-## Outputs (write to `workflows/{id}/l4-validation/`)
+## Outputs (write to `.aegis/runs/{id}/l4-validation/`)
 
 - `test-report.md`
 - `qa-signoff.json`
@@ -32,4 +32,4 @@ Use `validate_requirements_traceability` to prove the locked requirements map to
 3. Use `validate_requirements_traceability` to map every locked requirement to meaningful evidence
 4. Confirm the integrated artifact still respects `task_breakdown.json`, `implementation-contracts.json`, and per-agent `reuse-audit.json`
 5. Reject any crash, data-loss path, security regression, uncovered locked requirement, or unresolved parallel-integration conflict
-6. If L4 review requests changes, update validation evidence only within locked scope and add `fix-response-round-N.md` in `workflows/{id}/l4-validation/`.
+6. If L4 review requests changes, update validation evidence only within locked scope and add `fix-response-round-N.md` in `.aegis/runs/{id}/l4-validation/`.

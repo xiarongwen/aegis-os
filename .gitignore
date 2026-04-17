@@ -1,5 +1,13 @@
 # AEGIS System Gitignore
 
+# Workspace-local AEGIS runtime artifacts
+.aegis/project.yml
+.aegis/cache/
+.aegis/overrides/
+.aegis/policies/
+.aegis/runs/
+.aegis/core/workflow-index.json
+
 # Workflow runtime artifacts (keep structure, ignore temp files)
 workflows/*/.cache/
 workflows/*/.tmp/

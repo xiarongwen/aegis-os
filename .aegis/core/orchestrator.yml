@@ -76,7 +76,7 @@
     "L1_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["market-research"],
-      "artifact_dir": "workflows/{workflow}/l1-intelligence",
+      "artifact_dir": ".aegis/runs/{workflow}/l1-intelligence",
       "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
       "min_score": 8.0,
@@ -96,7 +96,7 @@
     "L2_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["prd-architect"],
-      "artifact_dir": "workflows/{workflow}/l2-planning",
+      "artifact_dir": ".aegis/runs/{workflow}/l2-planning",
       "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
       "min_score": 8.0,
@@ -116,7 +116,7 @@
     "L3_CODE_REVIEW": {
       "reviewer": "code-reviewer",
       "reviews_agents": ["frontend-squad", "backend-squad"],
-      "artifact_dir": "workflows/{workflow}/l3-dev",
+      "artifact_dir": ".aegis/runs/{workflow}/l3-dev",
       "required_outputs": ["code-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
       "min_score": 8.0,
@@ -136,7 +136,7 @@
     "L3_SECURITY_AUDIT": {
       "reviewer": "security-auditor",
       "reviews_agents": ["frontend-squad", "backend-squad"],
-      "artifact_dir": "workflows/{workflow}/l3-dev",
+      "artifact_dir": ".aegis/runs/{workflow}/l3-dev",
       "required_outputs": ["security-scan-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
       "min_score": 9.0,
@@ -156,7 +156,7 @@
     "L4_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["qa-validator"],
-      "artifact_dir": "workflows/{workflow}/l4-validation",
+      "artifact_dir": ".aegis/runs/{workflow}/l4-validation",
       "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
       "min_score": 8.5,
@@ -176,7 +176,7 @@
     "L5_REVIEW": {
       "reviewer": "research-qa-agent",
       "reviews_agents": ["deploy-sre"],
-      "artifact_dir": "workflows/{workflow}/l5-release",
+      "artifact_dir": ".aegis/runs/{workflow}/l5-release",
       "required_outputs": ["gate-review-report.md"],
       "rubric": "shared-contexts/review-rubric-8dim.json",
       "min_score": 9.0,
@@ -206,8 +206,8 @@
   },
   "development_controls": {
     "required_planning_artifacts": [
-      "workflows/{workflow}/l2-planning/task_breakdown.json",
-      "workflows/{workflow}/l2-planning/implementation-contracts.json"
+      ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+      ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json"
     ],
     "required_principles": [
       "dry_first",

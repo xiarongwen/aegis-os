@@ -22,17 +22,17 @@
     "run_verification"
   ],
   "inputs": [
-    "workflows/{workflow}/l2-planning/PRD.md",
-    "workflows/{workflow}/l2-planning/task_breakdown.json",
-    "workflows/{workflow}/l2-planning/implementation-contracts.json",
-    "workflows/{workflow}/l2-planning/requirements-lock.json",
-    "workflows/{workflow}/l3-dev/",
-    "workflows/{workflow}/l4-validation/"
+    ".aegis/runs/{workflow}/l2-planning/PRD.md",
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json",
+    ".aegis/runs/{workflow}/l3-dev/",
+    ".aegis/runs/{workflow}/l4-validation/"
   ],
   "outputs": [
-    "workflows/{workflow}/l4-validation/test-report.md",
-    "workflows/{workflow}/l4-validation/qa-signoff.json",
-    "workflows/{workflow}/l4-validation/requirements-traceability.json"
+    ".aegis/runs/{workflow}/l4-validation/test-report.md",
+    ".aegis/runs/{workflow}/l4-validation/qa-signoff.json",
+    ".aegis/runs/{workflow}/l4-validation/requirements-traceability.json"
   ],
   "dependencies": [
     "contract:validate_requirements_traceability",

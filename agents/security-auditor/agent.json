@@ -23,15 +23,15 @@
     "run_verification"
   ],
   "inputs": [
-    "workflows/{workflow}/l2-planning/task_breakdown.json",
-    "workflows/{workflow}/l2-planning/implementation-contracts.json",
-    "workflows/{workflow}/l3-dev/"
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l3-dev/"
   ],
   "outputs": [
-    "workflows/{workflow}/l3-dev/security-scan-report.md",
-    "workflows/{workflow}/l3-dev/review-loop-status.json",
-    "workflows/{workflow}/l3-dev/review-round-{round}.md",
-    "workflows/{workflow}/l3-dev/review-passed.json"
+    ".aegis/runs/{workflow}/l3-dev/security-scan-report.md",
+    ".aegis/runs/{workflow}/l3-dev/review-loop-status.json",
+    ".aegis/runs/{workflow}/l3-dev/review-round-{round}.md",
+    ".aegis/runs/{workflow}/l3-dev/review-passed.json"
   ],
   "dependencies": [
     "contract:run_gate_review",

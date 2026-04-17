@@ -138,7 +138,7 @@
         "delegate_specialist_task"
       ],
       "inputs": ["human:workflow_request"],
-      "outputs": ["workflows/{workflow}/state.json"],
+      "outputs": [".aegis/runs/{workflow}/state.json"],
       "dependencies": [
         "contract:spawn_agent",
         "contract:run_gate_review",
@@ -164,9 +164,9 @@
       "contract_actions": ["search_web", "fetch_source", "run_verification"],
       "inputs": ["human:product_idea", "human:target_market?"],
       "outputs": [
-        "workflows/{workflow}/l1-intelligence/market_report.md",
-        "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
-        "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+        ".aegis/runs/{workflow}/l1-intelligence/market_report.md",
+        ".aegis/runs/{workflow}/l1-intelligence/competitive_analysis.md",
+        ".aegis/runs/{workflow}/l1-intelligence/tech_feasibility.md"
       ],
       "dependencies": ["contract:search_web", "contract:fetch_source", "contract:run_verification"],
       "description": "Conducts source-backed market research, competition analysis, and feasibility framing.",
@@ -185,10 +185,10 @@
       "allowed_states": ["L1_REVIEW", "L2_REVIEW", "L4_REVIEW", "L5_REVIEW"],
       "contract_actions": ["run_gate_review", "run_verification"],
       "inputs": [
-        "workflows/{workflow}/l1-intelligence/",
-        "workflows/{workflow}/l2-planning/",
-        "workflows/{workflow}/l4-validation/",
-        "workflows/{workflow}/l5-release/"
+        ".aegis/runs/{workflow}/l1-intelligence/",
+        ".aegis/runs/{workflow}/l2-planning/",
+        ".aegis/runs/{workflow}/l4-validation/",
+        ".aegis/runs/{workflow}/l5-release/"
       ],
       "outputs": ["gate-review-report.md", "review-loop-status.json", "review-round-{round}.md", "review-passed.json"],
       "dependencies": ["contract:run_gate_review", "contract:run_verification"],
@@ -214,16 +214,16 @@
         "run_verification"
       ],
       "inputs": [
-        "workflows/{workflow}/l1-intelligence/market_report.md",
-        "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
-        "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+        ".aegis/runs/{workflow}/l1-intelligence/market_report.md",
+        ".aegis/runs/{workflow}/l1-intelligence/competitive_analysis.md",
+        ".aegis/runs/{workflow}/l1-intelligence/tech_feasibility.md"
       ],
       "outputs": [
-        "workflows/{workflow}/l2-planning/PRD.md",
-        "workflows/{workflow}/l2-planning/architecture.md",
-        "workflows/{workflow}/l2-planning/task_breakdown.json",
-        "workflows/{workflow}/l2-planning/implementation-contracts.json",
-        "workflows/{workflow}/l2-planning/requirements-lock.json"
+        ".aegis/runs/{workflow}/l2-planning/PRD.md",
+        ".aegis/runs/{workflow}/l2-planning/architecture.md",
+        ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+        ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+        ".aegis/runs/{workflow}/l2-planning/requirements-lock.json"
       ],
       "dependencies": [
         "contract:write_plan",
@@ -254,13 +254,13 @@
         "run_verification"
       ],
       "inputs": [
-        "workflows/{workflow}/l2-planning/PRD.md",
-        "workflows/{workflow}/l2-planning/architecture.md",
-        "workflows/{workflow}/l2-planning/task_breakdown.json",
-        "workflows/{workflow}/l2-planning/implementation-contracts.json",
-        "workflows/{workflow}/l2-planning/requirements-lock.json"
+        ".aegis/runs/{workflow}/l2-planning/PRD.md",
+        ".aegis/runs/{workflow}/l2-planning/architecture.md",
+        ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+        ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+        ".aegis/runs/{workflow}/l2-planning/requirements-lock.json"
       ],
-      "outputs": ["workflows/{workflow}/l3-dev/frontend/"],
+      "outputs": [".aegis/runs/{workflow}/l3-dev/frontend/"],
       "dependencies": [
         "contract:write_plan",
         "contract:scan_repo_reuse",
@@ -290,13 +290,13 @@
         "run_verification"
       ],
       "inputs": [
-        "workflows/{workflow}/l2-planning/PRD.md",
-        "workflows/{workflow}/l2-planning/architecture.md",
-        "workflows/{workflow}/l2-planning/task_breakdown.json",
-        "workflows/{workflow}/l2-planning/implementation-contracts.json",
-        "workflows/{workflow}/l2-planning/requirements-lock.json"
+        ".aegis/runs/{workflow}/l2-planning/PRD.md",
+        ".aegis/runs/{workflow}/l2-planning/architecture.md",
+        ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+        ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+        ".aegis/runs/{workflow}/l2-planning/requirements-lock.json"
       ],
-      "outputs": ["workflows/{workflow}/l3-dev/backend/"],
+      "outputs": [".aegis/runs/{workflow}/l3-dev/backend/"],
       "dependencies": [
         "contract:write_plan",
         "contract:scan_repo_reuse",
@@ -320,16 +320,16 @@
       "allowed_states": ["L3_CODE_REVIEW"],
       "contract_actions": ["run_gate_review", "run_verification"],
       "inputs": [
-        "workflows/{workflow}/l2-planning/PRD.md",
-        "workflows/{workflow}/l2-planning/task_breakdown.json",
-        "workflows/{workflow}/l2-planning/implementation-contracts.json",
-        "workflows/{workflow}/l3-dev/"
+        ".aegis/runs/{workflow}/l2-planning/PRD.md",
+        ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+        ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+        ".aegis/runs/{workflow}/l3-dev/"
       ],
       "outputs": [
-        "workflows/{workflow}/l3-dev/code-review-report.md",
-        "workflows/{workflow}/l3-dev/review-loop-status.json",
-        "workflows/{workflow}/l3-dev/review-round-{round}.md",
-        "workflows/{workflow}/l3-dev/review-passed.json"
+        ".aegis/runs/{workflow}/l3-dev/code-review-report.md",
+        ".aegis/runs/{workflow}/l3-dev/review-loop-status.json",
+        ".aegis/runs/{workflow}/l3-dev/review-round-{round}.md",
+        ".aegis/runs/{workflow}/l3-dev/review-passed.json"
       ],
       "dependencies": ["contract:run_gate_review", "contract:run_verification"],
       "description": "Independent code quality and architecture reviewer for development artifacts, including DRY compliance and parallel ownership discipline.",
@@ -348,15 +348,15 @@
       "allowed_states": ["L3_SECURITY_AUDIT"],
       "contract_actions": ["run_gate_review", "run_verification"],
       "inputs": [
-        "workflows/{workflow}/l2-planning/task_breakdown.json",
-        "workflows/{workflow}/l2-planning/implementation-contracts.json",
-        "workflows/{workflow}/l3-dev/"
+        ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+        ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+        ".aegis/runs/{workflow}/l3-dev/"
       ],
       "outputs": [
-        "workflows/{workflow}/l3-dev/security-scan-report.md",
-        "workflows/{workflow}/l3-dev/review-loop-status.json",
-        "workflows/{workflow}/l3-dev/review-round-{round}.md",
-        "workflows/{workflow}/l3-dev/review-passed.json"
+        ".aegis/runs/{workflow}/l3-dev/security-scan-report.md",
+        ".aegis/runs/{workflow}/l3-dev/review-loop-status.json",
+        ".aegis/runs/{workflow}/l3-dev/review-round-{round}.md",
+        ".aegis/runs/{workflow}/l3-dev/review-passed.json"
       ],
       "dependencies": ["contract:run_gate_review", "contract:run_verification"],
       "description": "Performs secure-code review and enforces the security veto gate across parallel development outputs and host-enhanced execution.",
@@ -375,17 +375,17 @@
       "allowed_states": ["L4_VALIDATE"],
       "contract_actions": ["validate_requirements_traceability", "run_verification"],
       "inputs": [
-        "workflows/{workflow}/l2-planning/PRD.md",
-        "workflows/{workflow}/l2-planning/task_breakdown.json",
-        "workflows/{workflow}/l2-planning/implementation-contracts.json",
-        "workflows/{workflow}/l2-planning/requirements-lock.json",
-        "workflows/{workflow}/l3-dev/",
-        "workflows/{workflow}/l4-validation/"
+        ".aegis/runs/{workflow}/l2-planning/PRD.md",
+        ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+        ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+        ".aegis/runs/{workflow}/l2-planning/requirements-lock.json",
+        ".aegis/runs/{workflow}/l3-dev/",
+        ".aegis/runs/{workflow}/l4-validation/"
       ],
       "outputs": [
-        "workflows/{workflow}/l4-validation/test-report.md",
-        "workflows/{workflow}/l4-validation/qa-signoff.json",
-        "workflows/{workflow}/l4-validation/requirements-traceability.json"
+        ".aegis/runs/{workflow}/l4-validation/test-report.md",
+        ".aegis/runs/{workflow}/l4-validation/qa-signoff.json",
+        ".aegis/runs/{workflow}/l4-validation/requirements-traceability.json"
       ],
       "dependencies": ["contract:validate_requirements_traceability", "contract:run_verification"],
       "description": "Runs release validation, coverage checks, acceptance traceability, and integration assurance before the release gate.",
@@ -404,17 +404,17 @@
       "allowed_states": ["L5_DEPLOY"],
       "contract_actions": ["ask_user", "run_verification"],
       "inputs": [
-        "workflows/{workflow}/l2-planning/architecture.md",
-        "workflows/{workflow}/l2-planning/requirements-lock.json",
-        "workflows/{workflow}/l3-dev/",
-        "workflows/{workflow}/l4-validation/"
+        ".aegis/runs/{workflow}/l2-planning/architecture.md",
+        ".aegis/runs/{workflow}/l2-planning/requirements-lock.json",
+        ".aegis/runs/{workflow}/l3-dev/",
+        ".aegis/runs/{workflow}/l4-validation/"
       ],
       "outputs": [
-        "workflows/{workflow}/l5-release/deployment-plan.md",
-        "workflows/{workflow}/l5-release/deployment-log.md",
-        "workflows/{workflow}/l5-release/rollback-plan.md",
-        "workflows/{workflow}/l5-release/monitoring-checklist.md",
-        "workflows/{workflow}/l5-release/post-deploy-security-scan-report.md"
+        ".aegis/runs/{workflow}/l5-release/deployment-plan.md",
+        ".aegis/runs/{workflow}/l5-release/deployment-log.md",
+        ".aegis/runs/{workflow}/l5-release/rollback-plan.md",
+        ".aegis/runs/{workflow}/l5-release/monitoring-checklist.md",
+        ".aegis/runs/{workflow}/l5-release/post-deploy-security-scan-report.md"
       ],
       "dependencies": ["contract:ask_user", "contract:run_verification"],
       "description": "Executes safe deployment, rollback planning, and post-deploy operational verification.",

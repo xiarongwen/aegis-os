@@ -13,13 +13,13 @@ Use `run_gate_review` to score implementation artifacts against the approved pla
 
 ## Inputs (read-only)
 
-From `workflows/{id}/l3-dev/`:
+From `.aegis/runs/{id}/l3-dev/`:
 - All frontend and backend source code
-- `workflows/{id}/l2-planning/PRD.md`
-- `workflows/{id}/l2-planning/task_breakdown.json`
-- `workflows/{id}/l2-planning/implementation-contracts.json`
+- `.aegis/runs/{id}/l2-planning/PRD.md`
+- `.aegis/runs/{id}/l2-planning/task_breakdown.json`
+- `.aegis/runs/{id}/l2-planning/implementation-contracts.json`
 
-## Outputs (write to `workflows/{id}/l3-dev/`)
+## Outputs (write to `.aegis/runs/{id}/l3-dev/`)
 
 - `code-review-report.md`
 - `review-loop-status.json`

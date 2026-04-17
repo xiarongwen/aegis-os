@@ -36,7 +36,7 @@
     "human:workflow_request"
   ],
   "outputs": [
-    "workflows/{workflow}/state.json"
+    ".aegis/runs/{workflow}/state.json"
   ],
   "dependencies": [
     "contract:spawn_agent",

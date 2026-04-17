@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -24,10 +25,15 @@ class AutomationRunnerError(RuntimeError):
 
 @dataclass
 class IntentRoute:
+    mode: str
     workflow_type: str
     target_state: str
     summary: str
     rationale: str
+    team_action: str | None = None
+    team_id: str | None = None
+    team_scope: str | None = None
+    team_request: str | None = None
 
 
 @dataclass
@@ -73,13 +79,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "exec",
                 "--full-auto",
                 "-C",
-                str(ROOT),
+                str(control_plane.workspace_root()),
                 "-o",
                 str(log_path),
                 prompt,
             ]
         )
-        completed = subprocess.run(cmd, text=True, capture_output=True, check=False)
+        env = os.environ.copy()
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = str(ROOT) if not existing_pythonpath else f"{ROOT}{os.pathsep}{existing_pythonpath}"
+        env["AEGIS_CORE_ROOT"] = str(ROOT)
+        env["AEGIS_WORKSPACE_ROOT"] = str(control_plane.workspace_root())
+        completed = subprocess.run(cmd, text=True, capture_output=True, check=False, env=env)
         if completed.returncode != 0:
             raise AutomationRunnerError(
                 f"runtime {self.name} failed for {agent_id} in {state_name}:\n"
@@ -112,7 +123,12 @@ class ClaudeRuntimeAdapter(RuntimeAdapter):
             str(ROOT),
             prompt,
         ]
-        completed = subprocess.run(cmd, text=True, capture_output=True, check=False)
+        env = os.environ.copy()
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = str(ROOT) if not existing_pythonpath else f"{ROOT}{os.pathsep}{existing_pythonpath}"
+        env["AEGIS_CORE_ROOT"] = str(ROOT)
+        env["AEGIS_WORKSPACE_ROOT"] = str(control_plane.workspace_root())
+        completed = subprocess.run(cmd, text=True, capture_output=True, check=False, env=env)
         if completed.returncode != 0:
             raise AutomationRunnerError(
                 f"runtime {self.name} failed for {agent_id} in {state_name}:\n"
@@ -133,10 +149,66 @@ def validate_intent_lock(payload: dict[str, Any]) -> None:
         raise AutomationRunnerError(f"intent lock missing required keys: {', '.join(missing)}")
 
 
+def strip_host_prefix(request: str) -> str:
+    return re.sub(r"^\s*(?:/)?aegis\b(?![-_])[\s:：-]*", "", request.strip(), count=1, flags=re.IGNORECASE)
+
+
+def extract_invoked_team_id(request: str) -> str | None:
+    matched = re.search(r"\b(AEGIS[-_][A-Za-z0-9][A-Za-z0-9_-]{1,62})\b", request, flags=re.IGNORECASE)
+    if not matched:
+        return None
+    return matched.group(1)
+
+
+def trim_team_invocation_request(request: str, team_id: str) -> str:
+    pattern = rf"^\s*{re.escape(team_id)}\b[\s:：,-]*"
+    trimmed = re.sub(pattern, "", request.strip(), count=1, flags=re.IGNORECASE).strip()
+    return trimmed or request.strip()
+
+
 def route_request(request: str) -> IntentRoute:
-    normalized = request.strip().lower()
+    raw_request = request.strip()
+    normalized_request = strip_host_prefix(raw_request)
+    normalized = normalized_request.lower()
     if not normalized:
         raise AutomationRunnerError("request cannot be empty")
+    team_creation_terms = ("创建", "生成", "组建", "创建一个", "create", "make", "spin up", "setup", "build me")
+    team_interest_terms = ("团队", "team", "team pack")
+    if any(term in normalized for term in team_interest_terms) and any(term in normalized for term in team_creation_terms):
+        inferred_domain = control_plane.infer_domain_from_request(normalized_request)
+        team_id = (
+            control_plane.extract_named_team_id(normalized_request)
+            or control_plane.default_team_id_for_domain(inferred_domain)
+        )
+        team_scope = control_plane.infer_scope_from_request(normalized_request)
+        return IntentRoute(
+            mode="team_pack",
+            workflow_type="team_pack_compose",
+            target_state="TEAM_READY",
+            summary="Create and install a reusable AEGIS Team Pack",
+            rationale="request explicitly asks to create a long-lived team",
+            team_action="compose",
+            team_id=team_id,
+            team_scope=team_scope,
+            team_request=normalized_request,
+        )
+
+    invoked_team_id = extract_invoked_team_id(normalized_request)
+    if invoked_team_id:
+        team_request = trim_team_invocation_request(normalized_request, invoked_team_id)
+        inferred_scope = control_plane.infer_scope_from_request(normalized_request)
+        return IntentRoute(
+            mode="team_pack",
+            workflow_type="team_pack_run",
+            target_state="TEAM_RUN_READY",
+            summary=f"Prepare a Team Pack run for {invoked_team_id}",
+            rationale="request targets an installed AEGIS Team Pack by name",
+            team_action="invoke",
+            team_id=invoked_team_id,
+            team_scope=inferred_scope if inferred_scope != "global" else "all",
+            team_request=team_request,
+        )
+
     research_terms = ("调研", "研究", "research", "竞品", "市场", "分析")
     planning_terms = ("prd", "规划", "plan", "架构", "任务拆解", "需求")
     build_terms = ("开发", "实现", "build", "页面", "功能", "chat page", "聊天页面", "frontend", "backend")
@@ -150,16 +222,52 @@ def route_request(request: str) -> IntentRoute:
     has_audit = any(term in normalized for term in audit_terms)
 
     if has_launch:
-        return IntentRoute("launch", "L5_REVIEW", "Launch approved work", "request explicitly asks for deployment or release")
+        return IntentRoute(
+            mode="workflow",
+            workflow_type="launch",
+            target_state="L5_REVIEW",
+            summary="Launch approved work",
+            rationale="request explicitly asks for deployment or release",
+        )
     if has_build:
-        return IntentRoute("build", "L4_REVIEW", "Build and validate a scoped deliverable", "request asks for implementation work")
+        return IntentRoute(
+            mode="workflow",
+            workflow_type="build",
+            target_state="L4_REVIEW",
+            summary="Build and validate a scoped deliverable",
+            rationale="request asks for implementation work",
+        )
     if has_research and has_planning:
-        return IntentRoute("planning", "L2_REVIEW", "Research a topic and lock a PRD", "request asks for research plus PRD/planning output")
+        return IntentRoute(
+            mode="workflow",
+            workflow_type="planning",
+            target_state="L2_REVIEW",
+            summary="Research a topic and lock a PRD",
+            rationale="request asks for research plus PRD/planning output",
+        )
     if has_planning:
-        return IntentRoute("planning", "L2_REVIEW", "Create a PRD and locked plan", "request asks for planning or PRD output")
+        return IntentRoute(
+            mode="workflow",
+            workflow_type="planning",
+            target_state="L2_REVIEW",
+            summary="Create a PRD and locked plan",
+            rationale="request asks for planning or PRD output",
+        )
     if has_audit:
-        return IntentRoute("audit", "L4_REVIEW", "Audit existing implementation and close findings", "request asks for audit/review work")
-    return IntentRoute("research", "L1_REVIEW", "Research a topic and produce reviewed findings", "default fallback is research-first execution")
+        return IntentRoute(
+            mode="workflow",
+            workflow_type="audit",
+            target_state="L4_REVIEW",
+            summary="Audit existing implementation and close findings",
+            rationale="request asks for audit/review work",
+        )
+    return IntentRoute(
+        mode="workflow",
+        workflow_type="research",
+        target_state="L1_REVIEW",
+        summary="Research a topic and produce reviewed findings",
+        rationale="default fallback is research-first execution",
+    )
 
 
 def workflow_id_from_request(request: str) -> str:
@@ -172,11 +280,11 @@ def workflow_id_from_request(request: str) -> str:
 
 
 def intent_lock_path(workflow_id: str) -> Path:
-    return ROOT / "workflows" / workflow_id / "intent-lock.json"
+    return control_plane.workflow_root(workflow_id) / "intent-lock.json"
 
 
 def runner_dir(workflow_id: str) -> Path:
-    return ROOT / "workflows" / workflow_id / "runner"
+    return control_plane.workflow_root(workflow_id) / "runner"
 
 
 def write_intent_lock(workflow_id: str, request: str, route: IntentRoute, runtime_name: str) -> dict[str, Any]:
@@ -197,6 +305,18 @@ def write_intent_lock(workflow_id: str, request: str, route: IntentRoute, runtim
     return payload
 
 
+def ensure_route_enabled(route: IntentRoute) -> None:
+    if route.mode != "workflow":
+        return
+    manifest = control_plane.load_json(control_plane.project_manifest_path())
+    control_plane.validate_project_manifest(manifest)
+    enabled_workflows = manifest.get("enabled_workflows", [])
+    if enabled_workflows and route.workflow_type not in enabled_workflows:
+        raise AutomationRunnerError(
+            f"workflow type `{route.workflow_type}` is disabled for workspace `{manifest['project_id']}`"
+        )
+
+
 def update_state_metadata(workflow_id: str, route: IntentRoute, request: str, runtime_name: str) -> None:
     state = control_plane.load_state(workflow_id)
     state["workflow_type"] = route.workflow_type
@@ -209,6 +329,13 @@ def update_state_metadata(workflow_id: str, route: IntentRoute, request: str, ru
         "last_updated": control_plane.utc_now(),
     }
     control_plane.write_json(control_plane.state_path(workflow_id), state)
+    control_plane.ensure_runtime_snapshot(workflow_id, workflow_type=route.workflow_type, refresh=True)
+    control_plane.update_workflow_index(
+        workflow_id,
+        workspace=control_plane.workspace_root(),
+        workflow_type=route.workflow_type,
+        current_state=state["current_state"],
+    )
 
 
 def pick_adapter(name: str) -> RuntimeAdapter:
@@ -245,11 +372,12 @@ def prompt_for_agent(
     state_name: str,
     route: IntentRoute,
 ) -> str:
-    workflow_root = ROOT / "workflows" / workflow_id
+    workflow_root = control_plane.workflow_root(workflow_id)
     skill_path = ROOT / agent["entrypoint"]
     intent_path = intent_lock_path(workflow_id)
     lines = [
         f"You are running inside the AEGIS automation runner as agent `{agent['id']}`.",
+        f"Attached workspace root: `{control_plane.workspace_root()}`.",
         f"Current workflow: `{workflow_id}`.",
         f"Current state: `{state_name}`.",
         f"Locked workflow type: `{route.workflow_type}`.",
@@ -257,8 +385,9 @@ def prompt_for_agent(
         "",
         "Read and follow these sources of truth before acting:",
         f"- `{skill_path}`",
-        f"- `{ROOT / '.aegis/core/registry.json'}`",
-        f"- `{ROOT / '.aegis/core/orchestrator.yml'}`",
+        f"- `{workflow_root / 'project-lock.json'}`",
+        f"- `{workflow_root / 'registry.lock.json'}`",
+        f"- `{workflow_root / 'orchestrator.lock.json'}`",
         f"- `{workflow_root / 'state.json'}`",
         f"- `{intent_path}`",
     ]
@@ -304,7 +433,11 @@ class AutomationRunner:
 
     def bootstrap(self, request: str, workflow_id: str | None = None) -> tuple[str, IntentRoute]:
         control_plane.doctor()
+        control_plane.ensure_workspace_layout()
         route = route_request(request)
+        if route.mode != "workflow":
+            raise AutomationRunnerError("bootstrap() only supports workflow routes; use bootstrap_summary() for team-pack requests")
+        ensure_route_enabled(route)
         workflow_id = workflow_id or workflow_id_from_request(request)
         if control_plane.state_path(workflow_id).exists():
             raise AutomationRunnerError(f"workflow already exists: {workflow_id}")
@@ -316,16 +449,103 @@ class AutomationRunner:
         return workflow_id, route
 
     def bootstrap_summary(self, request: str, workflow_id: str | None = None) -> dict[str, Any]:
+        control_plane.doctor()
+        control_plane.ensure_workspace_layout()
+        route = route_request(request)
+        if route.mode == "team_pack":
+            return self.handle_team_pack_request(route)
         workflow_id, route = self.bootstrap(request, workflow_id)
         return self.summary(workflow_id, route, "bootstrapped", steps=[])
 
     def run_request(self, request: str, workflow_id: str | None = None) -> dict[str, Any]:
+        control_plane.doctor()
+        control_plane.ensure_workspace_layout()
+        route = route_request(request)
+        if route.mode == "team_pack":
+            return self.handle_team_pack_request(route)
         workflow_id, route = self.bootstrap(request, workflow_id)
         return self.resume(workflow_id, route=route)
 
+    def handle_team_pack_request(self, route: IntentRoute) -> dict[str, Any]:
+        if route.team_action == "compose":
+            install = route.team_scope != "session"
+            if not route.team_id:
+                raise AutomationRunnerError("team composition route is missing team_id")
+            messages = control_plane.compose_team_pack_from_request(
+                route.team_request or route.summary,
+                team_id=route.team_id,
+                display_name=None,
+                scope=route.team_scope,
+                install=install,
+                explicit_workspace=control_plane.workspace_root(),
+            )
+            resolved_scope, team_dir, payload = control_plane.find_team_pack(
+                route.team_id,
+                route.team_scope or "all",
+                control_plane.workspace_root(),
+            )
+            return {
+                "status": "team_pack_ready",
+                "mode": route.mode,
+                "workflow_type": route.workflow_type,
+                "target_state": route.target_state,
+                "summary": route.summary,
+                "rationale": route.rationale,
+                "team_action": route.team_action,
+                "team_id": payload["team_id"],
+                "team_scope": resolved_scope,
+                "workspace_root": str(control_plane.workspace_root()),
+                "installed": payload["host_integration"]["installed"],
+                "host_skill_name": payload["host_integration"]["skill_name"],
+                "team_manifest": control_plane.display_path(team_dir / "team.json"),
+                "team_skill": control_plane.display_path(team_dir / "SKILL.md"),
+                "messages": messages,
+            }
+        if route.team_action == "invoke":
+            if not route.team_id:
+                raise AutomationRunnerError("team invocation route is missing team_id")
+            messages = control_plane.invoke_team_pack(
+                team_id=route.team_id,
+                request=route.team_request or route.summary,
+                scope=route.team_scope or "all",
+                explicit_workspace=control_plane.workspace_root(),
+            )
+            run_id_line = next((line for line in messages if line.startswith("run_id: ")), None)
+            if not run_id_line:
+                raise AutomationRunnerError(f"team run did not return a run_id for {route.team_id}")
+            run_id = run_id_line.split(": ", 1)[1]
+            resolved_scope, _, payload = control_plane.find_team_pack(
+                route.team_id,
+                route.team_scope or "all",
+                control_plane.workspace_root(),
+            )
+            return {
+                "status": "team_run_prepared",
+                "mode": route.mode,
+                "workflow_type": route.workflow_type,
+                "target_state": route.target_state,
+                "summary": route.summary,
+                "rationale": route.rationale,
+                "team_action": route.team_action,
+                "team_id": payload["team_id"],
+                "team_scope": resolved_scope,
+                "run_id": run_id,
+                "workspace_root": str(control_plane.workspace_root()),
+                "brief_json": control_plane.display_path(
+                    control_plane.team_run_brief_path(payload["team_id"], resolved_scope, run_id, control_plane.workspace_root())
+                ),
+                "brief_markdown": control_plane.display_path(
+                    control_plane.team_run_brief_markdown_path(
+                        payload["team_id"], resolved_scope, run_id, control_plane.workspace_root()
+                    )
+                ),
+                "messages": messages,
+            }
+        raise AutomationRunnerError(f"unsupported team action: {route.team_action}")
+
     def resume(self, workflow_id: str, route: IntentRoute | None = None) -> dict[str, Any]:
         route = route or self.load_route(workflow_id)
-        registry, orchestrator, _ = control_plane.get_context()
+        _, registry, orchestrator, _ = control_plane.get_runtime_context(workflow_id)
         steps: list[dict[str, Any]] = []
         for _ in range(self.max_steps):
             state = control_plane.load_state(workflow_id)
@@ -387,7 +607,7 @@ class AutomationRunner:
             "state": state_name,
             "agent": agent_id,
             "runtime": self.adapter.name,
-            "log_path": str(result.output_path.relative_to(ROOT)),
+            "log_path": control_plane.display_path(result.output_path),
             "command": result.command,
         }
 
@@ -395,6 +615,7 @@ class AutomationRunner:
         payload = control_plane.load_json(intent_lock_path(workflow_id))
         validate_intent_lock(payload)
         return IntentRoute(
+            mode="workflow",
             workflow_type=payload["workflow_type"],
             target_state=payload["target_state"],
             summary=payload["normalized_goal"],
@@ -405,6 +626,7 @@ class AutomationRunner:
         state = control_plane.load_state(workflow_id)
         return {
             "workflow_id": workflow_id,
+            "workspace_root": str(control_plane.workspace_root()),
             "status": status,
             "workflow_type": route.workflow_type,
             "target_state": route.target_state,
@@ -412,8 +634,11 @@ class AutomationRunner:
             "next_state_hint": state.get("next_state_hint"),
             "active_review_loop": state.get("active_review_loop"),
             "steps": steps,
-            "intent_lock": str(intent_lock_path(workflow_id).relative_to(ROOT)),
-            "state_path": str(control_plane.state_path(workflow_id).relative_to(ROOT)),
+            "intent_lock": control_plane.display_path(intent_lock_path(workflow_id)),
+            "project_lock": control_plane.display_path(control_plane.project_lock_path(workflow_id)),
+            "registry_lock": control_plane.display_path(control_plane.registry_lock_path(workflow_id)),
+            "orchestrator_lock": control_plane.display_path(control_plane.orchestrator_lock_path(workflow_id)),
+            "state_path": control_plane.display_path(control_plane.state_path(workflow_id)),
         }
 
 
@@ -423,6 +648,7 @@ def print_json(payload: dict[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="AEGIS automation runner")
+    parser.add_argument("--workspace", help="Workspace root for the attached project")
     sub = parser.add_subparsers(dest="command", required=True)
 
     bootstrap_cmd = sub.add_parser("bootstrap")
@@ -448,14 +674,25 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
+        if args.workspace:
+            os.environ["AEGIS_WORKSPACE_ROOT"] = str(Path(args.workspace).expanduser().resolve())
+        elif hasattr(args, "workflow"):
+            inferred_workspace = control_plane.workspace_from_workflow_index(getattr(args, "workflow"))
+            if inferred_workspace:
+                os.environ["AEGIS_WORKSPACE_ROOT"] = str(inferred_workspace)
         if args.command == "route":
             route = route_request(args.request)
             print_json(
                 {
+                    "mode": route.mode,
                     "workflow_type": route.workflow_type,
                     "target_state": route.target_state,
                     "normalized_goal": route.summary,
                     "routing_rationale": route.rationale,
+                    "team_action": route.team_action,
+                    "team_id": route.team_id,
+                    "team_scope": route.team_scope,
+                    "team_request": route.team_request,
                 }
             )
             return 0

@@ -14,10 +14,10 @@ This agent uses `run_gate_review` to score artifacts against the shared rubric a
 ## Inputs (read-only)
 
 Read the workflow stage artifacts configured by the control plane for the current gate. Typical inputs include:
-- `workflows/{id}/l1-intelligence/`
-- `workflows/{id}/l2-planning/`
-- `workflows/{id}/l4-validation/`
-- `workflows/{id}/l5-release/`
+- `.aegis/runs/{id}/l1-intelligence/`
+- `.aegis/runs/{id}/l2-planning/`
+- `.aegis/runs/{id}/l4-validation/`
+- `.aegis/runs/{id}/l5-release/`
 
 ## Outputs
 

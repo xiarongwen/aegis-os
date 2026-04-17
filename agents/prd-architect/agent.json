@@ -23,16 +23,16 @@
     "run_verification"
   ],
   "inputs": [
-    "workflows/{workflow}/l1-intelligence/market_report.md",
-    "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
-    "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+    ".aegis/runs/{workflow}/l1-intelligence/market_report.md",
+    ".aegis/runs/{workflow}/l1-intelligence/competitive_analysis.md",
+    ".aegis/runs/{workflow}/l1-intelligence/tech_feasibility.md"
   ],
   "outputs": [
-    "workflows/{workflow}/l2-planning/PRD.md",
-    "workflows/{workflow}/l2-planning/architecture.md",
-    "workflows/{workflow}/l2-planning/task_breakdown.json",
-    "workflows/{workflow}/l2-planning/implementation-contracts.json",
-    "workflows/{workflow}/l2-planning/requirements-lock.json"
+    ".aegis/runs/{workflow}/l2-planning/PRD.md",
+    ".aegis/runs/{workflow}/l2-planning/architecture.md",
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json"
   ],
   "dependencies": [
     "contract:write_plan",

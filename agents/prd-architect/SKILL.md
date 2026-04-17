@@ -13,12 +13,12 @@ Use `write_plan` to turn research into product and architecture decisions, use `
 
 ## Inputs (read-only)
 
-Read from `workflows/{id}/l1-intelligence/`:
+Read from `.aegis/runs/{id}/l1-intelligence/`:
 - `market_report.md`
 - `competitive_analysis.md`
 - `tech_feasibility.md`
 
-## Outputs (write to `workflows/{id}/l2-planning/`)
+## Outputs (write to `.aegis/runs/{id}/l2-planning/`)
 
 - `PRD.md`
 - `architecture.md`
@@ -35,5 +35,5 @@ Read from `workflows/{id}/l1-intelligence/`:
 5. Use `lock_requirements` to freeze in-scope work, out-of-scope items, acceptance criteria, and non-functional requirements into `requirements-lock.json`.
 6. Ensure every user story maps to explicit acceptance criteria and every implementation contract can be traced back to the PRD.
 7. Use `run_verification` to catch ambiguity, overlapping write scopes, or missing host-capability bindings before the planning gate.
-8. If L2 review requests changes, update only the locked planning artifacts and add `fix-response-round-N.md` in `workflows/{id}/l2-planning/`.
+8. If L2 review requests changes, update only the locked planning artifacts and add `fix-response-round-N.md` in `.aegis/runs/{id}/l2-planning/`.
 9. If resolving review feedback requires changing requirement meaning, send the workflow back through planning change control instead of silently mutating scope.

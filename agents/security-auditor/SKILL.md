@@ -13,13 +13,13 @@ Use `run_gate_review` to perform the security gate and `run_verification` to ens
 
 ## Inputs (read-only)
 
-From `workflows/{id}/l3-dev/`:
+From `.aegis/runs/{id}/l3-dev/`:
 - All source code
 - Dependency manifests
-- `workflows/{id}/l2-planning/task_breakdown.json`
-- `workflows/{id}/l2-planning/implementation-contracts.json`
+- `.aegis/runs/{id}/l2-planning/task_breakdown.json`
+- `.aegis/runs/{id}/l2-planning/implementation-contracts.json`
 
-## Outputs (write to `workflows/{id}/l3-dev/`)
+## Outputs (write to `.aegis/runs/{id}/l3-dev/`)
 
 - `security-scan-report.md`
 - `review-loop-status.json`

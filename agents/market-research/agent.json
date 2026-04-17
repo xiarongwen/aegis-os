@@ -25,9 +25,9 @@
     "human:target_market?"
   ],
   "outputs": [
-    "workflows/{workflow}/l1-intelligence/market_report.md",
-    "workflows/{workflow}/l1-intelligence/competitive_analysis.md",
-    "workflows/{workflow}/l1-intelligence/tech_feasibility.md"
+    ".aegis/runs/{workflow}/l1-intelligence/market_report.md",
+    ".aegis/runs/{workflow}/l1-intelligence/competitive_analysis.md",
+    ".aegis/runs/{workflow}/l1-intelligence/tech_feasibility.md"
   ],
   "dependencies": [
     "contract:search_web",

@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "project_id",
+    "project_root",
+    "core_root",
+    "artifact_root",
+    "created_at"
+  ],
+  "properties": {
+    "version": { "type": "string" },
+    "project_id": { "type": "string" },
+    "project_type": { "type": "string" },
+    "project_root": { "type": "string" },
+    "core_root": { "type": "string" },
+    "artifact_root": { "type": "string" },
+    "enabled_workflows": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "review_policy": { "type": "object" },
+    "stack": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "test_commands": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "build_commands": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "default_output_policy": { "type": "object" },
+    "artifact_retention": { "type": "object" },
+    "deploy_policy": { "type": "object" },
+    "agent_overrides": { "type": "object" },
+    "created_at": { "type": "string" }
+  }
+}

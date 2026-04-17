@@ -1,5 +1,7 @@
+import os
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,6 +12,12 @@ from tools.control_plane import cli as control_plane
 
 def fake_git(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(["git", *args], 0, "", "")
+
+
+def init_git_workspace(path: Path) -> None:
+    subprocess.run(["git", "init", str(path)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.name", "AEGIS Test"], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.email", "aegis@example.com"], check=True, capture_output=True, text=True)
 
 
 class FakeAdapter(runner_cli.RuntimeAdapter):
@@ -25,7 +33,7 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
         log_path: Path,
         use_search: bool,
     ) -> runner_cli.RuntimeResult:
-        workflow_root = runner_cli.ROOT / "workflows" / workflow_id
+        workflow_root = control_plane.workflow_root(workflow_id)
         if agent_id == "market-research":
             target = workflow_root / "l1-intelligence"
             target.mkdir(parents=True, exist_ok=True)
@@ -62,9 +70,9 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
                             "stage": "L3_DEVELOP",
                             "depends_on": [],
                             "parallel_group": "ui-api",
-                            "write_scope": ["workflows/{workflow}/l3-dev/frontend/**".replace("{workflow}", workflow_id)],
+                            "write_scope": [".aegis/runs/{workflow}/l3-dev/frontend/**".replace("{workflow}", workflow_id)],
                             "acceptance_criteria": ["UI renders a bounded shell"],
-                            "dry_reuse_targets": ["workflows/{workflow}/l3-dev/frontend".replace("{workflow}", workflow_id)],
+                            "dry_reuse_targets": [".aegis/runs/{workflow}/l3-dev/frontend".replace("{workflow}", workflow_id)],
                             "host_capability_needs": ["resolve_host_capability", "scan_repo_reuse"],
                         },
                         {
@@ -74,9 +82,9 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
                             "stage": "L3_DEVELOP",
                             "depends_on": [],
                             "parallel_group": "ui-api",
-                            "write_scope": ["workflows/{workflow}/l3-dev/backend/**".replace("{workflow}", workflow_id)],
+                            "write_scope": [".aegis/runs/{workflow}/l3-dev/backend/**".replace("{workflow}", workflow_id)],
                             "acceptance_criteria": ["API shell responds"],
-                            "dry_reuse_targets": ["workflows/{workflow}/l3-dev/backend".replace("{workflow}", workflow_id)],
+                            "dry_reuse_targets": [".aegis/runs/{workflow}/l3-dev/backend".replace("{workflow}", workflow_id)],
                             "host_capability_needs": ["resolve_host_capability", "scan_repo_reuse"],
                         },
                     ],
@@ -91,8 +99,8 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
                     "contract_version": "1.0.0",
                     "shared_interfaces": [],
                     "owned_write_scopes": {
-                        "frontend-squad": ["workflows/{workflow}/l3-dev/frontend/**".replace("{workflow}", workflow_id)],
-                        "backend-squad": ["workflows/{workflow}/l3-dev/backend/**".replace("{workflow}", workflow_id)],
+                        "frontend-squad": [".aegis/runs/{workflow}/l3-dev/frontend/**".replace("{workflow}", workflow_id)],
+                        "backend-squad": [".aegis/runs/{workflow}/l3-dev/backend/**".replace("{workflow}", workflow_id)],
                     },
                     "integration_rules": {
                         "required_before_parallel": ["contract_before_code"],
@@ -121,6 +129,8 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
                 target = workflow_root / "l1-intelligence"
             elif state_name == "L2_REVIEW":
                 target = workflow_root / "l2-planning"
+            elif state_name == "L4_REVIEW":
+                target = workflow_root / "l4-validation"
             else:
                 raise AssertionError(f"unexpected state for fake reviewer: {state_name}")
             (target / "gate-review-report.md").write_text("gate ok\n", encoding="utf-8")
@@ -150,6 +160,121 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
                     "approved_at": control_plane.utc_now(),
                 },
             )
+        elif agent_id in {"frontend-squad", "backend-squad"}:
+            slug = "frontend" if agent_id == "frontend-squad" else "backend"
+            target = workflow_root / "l3-dev" / slug
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "README.md").write_text(f"{agent_id} output\n", encoding="utf-8")
+            state = control_plane.load_state(workflow_id)
+            control_plane.write_json(
+                target / "reuse-audit.json",
+                {
+                    "version": "1.0.0",
+                    "workflow_id": workflow_id,
+                    "agent_id": agent_id,
+                    "generated_at": control_plane.utc_now(),
+                    "requirements_lock_hash": state["requirements_lock_hash"],
+                    "completed_tasks": ["FE-1"] if agent_id == "frontend-squad" else ["BE-1"],
+                    "scanned_existing_assets": [f"src/{slug}", "src/lib"],
+                    "reused_assets": [],
+                    "new_assets": [f"src/{slug}/index.js"],
+                    "duplication_risk_checks": [f"No existing {slug} implementation matched the locked requirements"],
+                    "host_capabilities_used": [
+                        {
+                            "action": "resolve_host_capability",
+                            "resolution": "used mapped host capability only",
+                        }
+                    ],
+                    "verification_commands": ["npm test"],
+                },
+            )
+        elif agent_id == "code-reviewer":
+            target = workflow_root / "l3-dev"
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "code-review-report.md").write_text("code review ok\n", encoding="utf-8")
+            (target / "review-round-1.md").write_text("code review round ok\n", encoding="utf-8")
+            control_plane.write_json(
+                target / "review-loop-status.json",
+                {
+                    "workflow_id": workflow_id,
+                    "gate": state_name,
+                    "round": 1,
+                    "status": "lgtm",
+                    "verdict": "LGTM",
+                    "open_issues": [],
+                    "closed_issues": [],
+                    "lgtm": True,
+                    "max_rounds": 3,
+                    "updated_at": control_plane.utc_now(),
+                },
+            )
+            control_plane.write_json(
+                target / "review-passed.json",
+                {
+                    "score": 8.8,
+                    "reviewer": "code-reviewer",
+                    "blockers": [],
+                    "suggestions": [],
+                    "approved_at": control_plane.utc_now(),
+                },
+            )
+        elif agent_id == "security-auditor":
+            target = workflow_root / "l3-dev"
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "security-scan-report.md").write_text("security review ok\n", encoding="utf-8")
+            (target / "review-round-1.md").write_text("security review round ok\n", encoding="utf-8")
+            control_plane.write_json(
+                target / "review-loop-status.json",
+                {
+                    "workflow_id": workflow_id,
+                    "gate": state_name,
+                    "round": 1,
+                    "status": "lgtm",
+                    "verdict": "LGTM",
+                    "open_issues": [],
+                    "closed_issues": [],
+                    "lgtm": True,
+                    "max_rounds": 3,
+                    "updated_at": control_plane.utc_now(),
+                },
+            )
+            control_plane.write_json(
+                target / "review-passed.json",
+                {
+                    "score": 9.4,
+                    "reviewer": "security-auditor",
+                    "blockers": [],
+                    "suggestions": [],
+                    "approved_at": control_plane.utc_now(),
+                },
+            )
+        elif agent_id == "qa-validator":
+            target = workflow_root / "l4-validation"
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "test-report.md").write_text("qa ok\n", encoding="utf-8")
+            control_plane.write_json(
+                target / "qa-signoff.json",
+                {
+                    "status": "approved",
+                    "signed_off_by": "qa-validator",
+                    "approved_at": control_plane.utc_now(),
+                },
+            )
+            control_plane.write_json(
+                target / "requirements-traceability.json",
+                {
+                    "workflow_id": workflow_id,
+                    "requirements_lock_hash": control_plane.load_state(workflow_id)["requirements_lock_hash"],
+                    "covered_stories": [
+                        {
+                            "id": "USR-1",
+                            "evidence": ["test-report.md", "../l3-dev/frontend/README.md", "../l3-dev/backend/README.md"],
+                        }
+                    ],
+                    "uncovered_items": [],
+                    "approved_at": control_plane.utc_now(),
+                },
+            )
         else:
             raise AssertionError(f"unexpected fake adapter agent: {agent_id}")
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,13 +283,42 @@ class FakeAdapter(runner_cli.RuntimeAdapter):
 
 
 class AutomationRunnerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-workspace-"))
+        self.team_home = Path(tempfile.mkdtemp(prefix="aegis-team-home-"))
+        self.skills_dir = Path(tempfile.mkdtemp(prefix="aegis-team-skills-"))
+        self.commands_dir = Path(tempfile.mkdtemp(prefix="aegis-team-commands-"))
+        init_git_workspace(self.workspace_dir)
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                "AEGIS_WORKSPACE_ROOT": str(self.workspace_dir),
+                "AEGIS_TEAM_HOME": str(self.team_home),
+            },
+        )
+        self.skills_patch = patch.object(control_plane, "SKILLS_DIR", self.skills_dir)
+        self.commands_patch = patch.object(control_plane, "CLAUDE_COMMANDS_DIR", self.commands_dir)
+        self.env_patch.start()
+        self.skills_patch.start()
+        self.commands_patch.start()
+        control_plane.ensure_workspace_layout()
+
     def tearDown(self) -> None:
+        self.commands_patch.stop()
+        self.skills_patch.stop()
+        self.env_patch.stop()
         for workflow_id in [
             "planning-mvp-test",
             "build-mvp-test",
+            "build-e2e-test",
             "human-pause-test",
+            "snapshot-freeze-test",
         ]:
-            shutil.rmtree(runner_cli.ROOT / "workflows" / workflow_id, ignore_errors=True)
+            shutil.rmtree(control_plane.workflow_root(workflow_id), ignore_errors=True)
+        shutil.rmtree(self.workspace_dir, ignore_errors=True)
+        shutil.rmtree(self.team_home, ignore_errors=True)
+        shutil.rmtree(self.skills_dir, ignore_errors=True)
+        shutil.rmtree(self.commands_dir, ignore_errors=True)
 
     def test_route_request_for_prd_goal(self) -> None:
         route = runner_cli.route_request("帮我调研一个项目并输出 PRD")
@@ -176,6 +330,22 @@ class AutomationRunnerTests(unittest.TestCase):
         self.assertEqual(route.workflow_type, "build")
         self.assertEqual(route.target_state, "L4_REVIEW")
 
+    def test_route_request_for_team_creation_goal(self) -> None:
+        route = runner_cli.route_request("/aegis 帮我创建一个专业的视频剪辑团队，名字叫 AEGIS-video")
+        self.assertEqual(route.mode, "team_pack")
+        self.assertEqual(route.workflow_type, "team_pack_compose")
+        self.assertEqual(route.team_action, "compose")
+        self.assertEqual(route.team_id, "AEGIS-video")
+        self.assertEqual(route.team_scope, "global")
+
+    def test_route_request_for_team_invocation_goal(self) -> None:
+        route = runner_cli.route_request("AEGIS-video 帮我做一个短视频方案，重点是 hook 和字幕节奏。")
+        self.assertEqual(route.mode, "team_pack")
+        self.assertEqual(route.workflow_type, "team_pack_run")
+        self.assertEqual(route.team_action, "invoke")
+        self.assertEqual(route.team_id, "AEGIS-video")
+        self.assertTrue(route.team_request.startswith("帮我做一个短视频方案"))
+
     def test_runner_completes_planning_target(self) -> None:
         runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before=set(), max_steps=10)
         with patch("tools.control_plane.cli.git", side_effect=fake_git):
@@ -186,6 +356,18 @@ class AutomationRunnerTests(unittest.TestCase):
         intent_lock = control_plane.load_json(runner_cli.intent_lock_path("planning-mvp-test"))
         self.assertEqual(intent_lock["workflow_type"], "planning")
 
+    def test_runner_completes_build_target_end_to_end(self) -> None:
+        runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before=set(), max_steps=20)
+        with patch("tools.control_plane.cli.git", side_effect=fake_git):
+            result = runner.run_request("帮我开发一个聊天页面", workflow_id="build-e2e-test")
+        self.assertEqual(result["status"], "completed_target")
+        self.assertEqual(result["current_state"], "L4_REVIEW")
+        self.assertEqual(result["next_state_hint"], "L5_DEPLOY")
+        self.assertEqual(len(result["steps"]), 10)
+        self.assertTrue((control_plane.workflow_root("build-e2e-test") / "l3-dev" / "frontend" / "reuse-audit.json").exists())
+        self.assertTrue((control_plane.workflow_root("build-e2e-test") / "l3-dev" / "backend" / "reuse-audit.json").exists())
+        self.assertTrue((control_plane.workflow_root("build-e2e-test") / "l4-validation" / "requirements-traceability.json").exists())
+
     def test_bootstrap_summary_creates_host_native_workflow(self) -> None:
         runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before=set(), max_steps=10)
         summary = runner.bootstrap_summary("帮我调研一个项目并输出 PRD", workflow_id="build-mvp-test")
@@ -194,6 +376,32 @@ class AutomationRunnerTests(unittest.TestCase):
         intent_lock = control_plane.load_json(runner_cli.intent_lock_path("build-mvp-test"))
         self.assertEqual(intent_lock["status"], "locked")
         self.assertEqual(intent_lock["workflow_type"], "planning")
+        self.assertTrue(control_plane.project_lock_path("build-mvp-test").exists())
+        self.assertTrue(control_plane.registry_lock_path("build-mvp-test").exists())
+        self.assertTrue(control_plane.orchestrator_lock_path("build-mvp-test").exists())
+
+    def test_runtime_snapshot_remains_frozen_after_project_manifest_changes(self) -> None:
+        runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before=set(), max_steps=10)
+        summary = runner.bootstrap_summary("帮我调研一个项目并输出 PRD", workflow_id="snapshot-freeze-test")
+        self.assertEqual(summary["status"], "bootstrapped")
+
+        original_project_lock = control_plane.load_json(control_plane.project_lock_path("snapshot-freeze-test"))
+        updated_manifest = control_plane.load_json(control_plane.project_manifest_path())
+        updated_manifest["project_id"] = "mutated-project-id"
+        control_plane.write_json(control_plane.project_manifest_path(), updated_manifest)
+
+        locked_project, _, _, _ = control_plane.get_runtime_context("snapshot-freeze-test")
+        self.assertEqual(locked_project["project_id"], original_project_lock["project_id"])
+        self.assertNotEqual(locked_project["project_id"], updated_manifest["project_id"])
+        self.assertEqual(control_plane.run_doctor("snapshot-freeze-test")[0], "runtime snapshot valid: .aegis/runs/snapshot-freeze-test/project-lock.json")
+
+    def test_bootstrap_rejects_disabled_workflow_type(self) -> None:
+        manifest = control_plane.load_json(control_plane.project_manifest_path())
+        manifest["enabled_workflows"] = ["research"]
+        control_plane.write_json(control_plane.project_manifest_path(), manifest)
+        runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before=set(), max_steps=10)
+        with self.assertRaisesRegex(runner_cli.AutomationRunnerError, "workflow type `build` is disabled"):
+            runner.bootstrap_summary("帮我开发一个聊天页面", workflow_id="disabled-build-test")
 
     def test_runner_pauses_before_human_required_state(self) -> None:
         runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before={"L5_DEPLOY"}, max_steps=10)
@@ -204,6 +412,27 @@ class AutomationRunnerTests(unittest.TestCase):
         result = runner.resume(workflow_id, route=route)
         self.assertEqual(result["status"], "paused_for_human")
         self.assertEqual(result["current_state"], "L5_DEPLOY")
+
+    def test_bootstrap_summary_creates_team_pack_for_team_request(self) -> None:
+        runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before=set(), max_steps=10)
+        summary = runner.bootstrap_summary("AEGIS 帮我创建一个专业的视频剪辑团队，名字叫 AEGIS-video")
+        self.assertEqual(summary["status"], "team_pack_ready")
+        self.assertEqual(summary["team_id"], "AEGIS-video")
+        self.assertTrue(summary["installed"])
+        manifest_path = self.team_home / "teams" / "global" / "AEGIS-video" / "team.json"
+        self.assertTrue(manifest_path.exists())
+        self.assertTrue((self.skills_dir / "aegis-video").is_symlink())
+        self.assertTrue((self.commands_dir / "aegis-video.md").is_symlink())
+
+    def test_run_request_prepares_team_run_for_installed_team(self) -> None:
+        runner = runner_cli.AutomationRunner(adapter=FakeAdapter(), stop_before=set(), max_steps=10)
+        runner.bootstrap_summary("AEGIS 帮我创建一个专业的视频剪辑团队，名字叫 AEGIS-video")
+        summary = runner.run_request("AEGIS-video 帮我做一个 hook 很强的短视频脚本")
+        self.assertEqual(summary["status"], "team_run_prepared")
+        self.assertEqual(summary["team_id"], "AEGIS-video")
+        self.assertTrue(summary["run_id"].startswith("aegis-video-"))
+        self.assertTrue((self.team_home / "teams" / "global" / "AEGIS-video" / "runs" / f"{summary['run_id']}.brief.json").exists())
+        self.assertIn("team_memory_markdown:", "\n".join(summary["messages"]))
 
 
 if __name__ == "__main__":
