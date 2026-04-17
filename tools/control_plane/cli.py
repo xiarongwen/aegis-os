@@ -42,6 +42,52 @@ FORBIDDEN_TOKENS = ["WebSearch", "AskUserQuestion", "mcp__fetch__fetch", "superp
 WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-_]{1,62}$")
 TEAM_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-_]{1,62}$")
 HOST_SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
+PREFERENCE_STRONG_PATTERNS = [
+    re.compile(r"(?:默认|以后都|以后统一|以后默认|后续都|今后都|从现在开始|请记住|记住|一律|始终|固定使用|固定输出|以后不要|别再|永远不要)"),
+    re.compile(r"\b(?:default to|from now on|going forward|always|remember|every time|stick to|never again)\b", re.IGNORECASE),
+]
+PREFERENCE_WEAK_PATTERNS = [
+    re.compile(r"(?:优先|尽量|最好|偏向|保持|继续用|先给|先出|多用|少用)"),
+    re.compile(r"\b(?:prefer|preferably|focus on|start with|use more|use less)\b", re.IGNORECASE),
+]
+PREFERENCE_STOPWORDS = {
+    "aegis",
+    "agent",
+    "agents",
+    "team",
+    "teams",
+    "project",
+    "please",
+    "help",
+    "with",
+    "that",
+    "this",
+    "then",
+    "later",
+    "again",
+    "still",
+    "using",
+    "into",
+    "from",
+    "给我",
+    "帮我",
+    "一下",
+    "这个",
+    "那个",
+    "当前",
+    "本次",
+    "这次",
+    "那个",
+    "还有",
+    "以及",
+    "我们",
+    "你们",
+    "需要",
+    "先把",
+    "然后",
+    "继续",
+    "后续",
+}
 ALLOWED_AGENT_OVERRIDE_KEYS = {
     "project_context",
     "extra_instructions",
@@ -760,13 +806,23 @@ aegis ctl show-team-memory --team {payload['team_id']} --scope {scope}
 
 Treat that memory as active operating context, not as optional history.
 
-When the user gives stable style preferences or recurring operating rules, record them explicitly:
+AEGIS now auto-observes preference signals from the user's request and only promotes them into stable team memory conservatively:
+
+- strong signals like `默认` / `以后都` / `记住` / `always` can promote in the same completed run
+- weaker signals like `优先` / `先给` / `prefer` stay as observations until they repeat
+- one-off weak phrasing should not be treated as permanent team memory
+
+```bash
+aegis ctl show-team-memory --team {payload['team_id']} --scope {scope}
+```
+
+If you need to force a preference into stable memory immediately, you can still record it explicitly:
 
 ```bash
 aegis ctl record-team-preference --team {payload['team_id']} --scope {scope} --note "<stable preference>"
 ```
 
-When the team learns something durable about a project or codebase, record it explicitly:
+When the team learns something durable about a project or codebase that is not already obvious from the run summary, record it explicitly:
 
 ```bash
 aegis ctl record-team-project-memory --team {payload['team_id']} --scope {scope} --note "<project memory>"
@@ -832,10 +888,12 @@ Before substantial work, first load the team's persistent memory:
 aegis ctl show-team-memory --team {payload['team_id']} --scope {scope}
 ```
 
-If the user is expressing a stable preference that should persist across runs, record it:
+Preference signals in the request are learned automatically when the run is completed. Do not write the whole request into stable preference memory by default.
+
+Use manual recording only when you intentionally want to force a stable preference:
 
 ```bash
-aegis ctl record-team-preference --team {payload['team_id']} --scope {scope} --note "$ARGUMENTS"
+aegis ctl record-team-preference --team {payload['team_id']} --scope {scope} --note "<stable preference>"
 ```
 
 Then prepare the run brief:
@@ -949,6 +1007,12 @@ def team_preferences_path(team_id: str, scope: str, explicit_workspace: str | Pa
     return team_memory_dir(team_id, scope, explicit_workspace) / "preferences.json"
 
 
+def team_preference_observations_path(
+    team_id: str, scope: str, explicit_workspace: str | Path | None = None
+) -> Path:
+    return team_memory_dir(team_id, scope, explicit_workspace) / "preference-observations.json"
+
+
 def team_project_memory_path(team_id: str, scope: str, explicit_workspace: str | Path | None = None) -> Path:
     return team_memory_dir(team_id, scope, explicit_workspace) / "project-memory.json"
 
@@ -986,12 +1050,12 @@ def team_run_summary_markdown_path(
 
 
 def next_team_run_id(team_id: str) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     return f"{slugify_text(team_id)}-{stamp}"
 
 
 def next_memory_item_id(prefix: str) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     return f"{prefix}-{stamp}"
 
 
@@ -1000,6 +1064,15 @@ def default_team_preferences_payload(team_id: str) -> dict[str, Any]:
         "version": "1.0.0",
         "team_id": team_id,
         "preferences": [],
+        "updated_at": utc_now(),
+    }
+
+
+def default_team_preference_observations_payload(team_id: str) -> dict[str, Any]:
+    return {
+        "version": "1.0.0",
+        "team_id": team_id,
+        "observations": [],
         "updated_at": utc_now(),
     }
 
@@ -1036,6 +1109,10 @@ def load_optional_memory_object(path: Path, default_payload: dict[str, Any]) -> 
     return payload
 
 
+def summarize_memory_tags(tokens: set[str], limit: int = 20) -> list[str]:
+    return sorted(tokens, key=lambda item: (-len(item), item))[:limit]
+
+
 def tokenize_memory_text(text: str) -> set[str]:
     lowered = text.lower()
     tokens = set(re.findall(r"[a-z0-9]{2,}", lowered))
@@ -1051,6 +1128,18 @@ def tokenize_memory_text(text: str) -> set[str]:
     return {token for token in tokens if token.strip()}
 
 
+def preference_similarity_tokens(text: str) -> set[str]:
+    filtered: set[str] = set()
+    for token in tokenize_memory_text(text):
+        normalized_token = token.lower().strip()
+        if len(normalized_token) < 2:
+            continue
+        if normalized_token in PREFERENCE_STOPWORDS:
+            continue
+        filtered.add(normalized_token)
+    return filtered
+
+
 def normalize_memory_note(item: dict[str, Any], *, kind: str) -> dict[str, Any]:
     content = item.get("content", "")
     tags = item.get("tags", [])
@@ -1064,6 +1153,128 @@ def normalize_memory_note(item: dict[str, Any], *, kind: str) -> dict[str, Any]:
         "content": content.strip(),
         "tags": sorted(set(tags)),
         "updated_at": item.get("updated_at", utc_now()),
+    }
+
+
+def sentence_segments(text: str) -> list[str]:
+    segments = re.split(r"[。\n\r!?！？;；]+", text)
+    return [re.sub(r"\s+", " ", segment).strip(" -:") for segment in segments if segment and segment.strip()]
+
+
+def detect_preference_markers(text: str) -> tuple[str | None, list[str]]:
+    markers: list[str] = []
+    for pattern in PREFERENCE_STRONG_PATTERNS:
+        matches = [match.group(0).strip() for match in pattern.finditer(text)]
+        markers.extend(matches)
+    if markers:
+        return "strong", sorted(set(markers))
+    for pattern in PREFERENCE_WEAK_PATTERNS:
+        matches = [match.group(0).strip() for match in pattern.finditer(text)]
+        markers.extend(matches)
+    if markers:
+        return "weak", sorted(set(markers))
+    return None, []
+
+
+def preference_strength_rank(value: str | None) -> int:
+    if value == "strong":
+        return 2
+    if value == "weak":
+        return 1
+    return 0
+
+
+def preference_items_match(
+    left_content: str,
+    left_tags: list[str] | set[str],
+    right_content: str,
+    right_tags: list[str] | set[str],
+) -> bool:
+    normalized_left = re.sub(r"\s+", " ", left_content).strip().lower()
+    normalized_right = re.sub(r"\s+", " ", right_content).strip().lower()
+    if normalized_left == normalized_right:
+        return True
+    left_tokens = set(left_tags) if left_tags else preference_similarity_tokens(left_content)
+    right_tokens = set(right_tags) if right_tags else preference_similarity_tokens(right_content)
+    overlap = left_tokens.intersection(right_tokens)
+    if len(overlap) < 2:
+        return False
+    ratio = len(overlap) / float(min(len(left_tokens), len(right_tokens)))
+    return ratio >= 0.55
+
+
+def extract_preference_candidates(request: str) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for segment in sentence_segments(request):
+        if len(segment) < 6 or len(segment) > 220:
+            continue
+        signal_strength, signal_markers = detect_preference_markers(segment)
+        if signal_strength is None:
+            continue
+        tags = summarize_memory_tags(preference_similarity_tokens(segment))
+        if signal_strength != "strong" and not tags:
+            continue
+        candidate = {
+            "content": segment,
+            "tags": tags,
+            "signal_strength": signal_strength,
+            "signal_markers": signal_markers,
+        }
+        duplicate = next(
+            (
+                item
+                for item in candidates
+                if preference_items_match(item["content"], item.get("tags", []), segment, tags)
+            ),
+            None,
+        )
+        if duplicate:
+            merged_tags = summarize_memory_tags(set(duplicate.get("tags", [])).union(tags))
+            duplicate["tags"] = merged_tags
+            duplicate["signal_markers"] = sorted(set(duplicate.get("signal_markers", []) + signal_markers))
+            if preference_strength_rank(signal_strength) > preference_strength_rank(duplicate.get("signal_strength")):
+                duplicate["signal_strength"] = signal_strength
+                duplicate["content"] = segment
+            continue
+        candidates.append(candidate)
+    return candidates
+
+
+def normalize_preference_observation(
+    item: dict[str, Any],
+    *,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    now = utc_now()
+    normalized_note = normalize_memory_note(item, kind="preference-observation")
+    source_run_ids = item.get("source_run_ids", [])
+    if not isinstance(source_run_ids, list) or not all(isinstance(entry, str) and entry.strip() for entry in source_run_ids):
+        raise ControlPlaneError("preference observation source_run_ids must be a list of non-empty strings")
+    if run_id and run_id not in source_run_ids:
+        source_run_ids.append(run_id)
+    signal_markers = item.get("signal_markers", [])
+    if not isinstance(signal_markers, list) or not all(isinstance(marker, str) and marker.strip() for marker in signal_markers):
+        raise ControlPlaneError("preference observation signal_markers must be a list of non-empty strings")
+    occurrences = item.get("occurrences", 1)
+    if not isinstance(occurrences, int) or occurrences < 1:
+        raise ControlPlaneError("preference observation occurrences must be a positive integer")
+    status = item.get("status", "observed")
+    if status not in {"observed", "promoted"}:
+        raise ControlPlaneError("preference observation status must be `observed` or `promoted`")
+    signal_strength = item.get("signal_strength", "weak")
+    if signal_strength not in {"weak", "strong"}:
+        raise ControlPlaneError("preference observation signal_strength must be `weak` or `strong`")
+    return {
+        **normalized_note,
+        "signal_strength": signal_strength,
+        "signal_markers": sorted(set(signal_markers)),
+        "occurrences": occurrences,
+        "status": status,
+        "source_run_ids": source_run_ids[-10:],
+        "first_seen_at": item.get("first_seen_at", now),
+        "last_seen_at": item.get("last_seen_at", now),
+        "promotion_reason": item.get("promotion_reason"),
+        "promoted_at": item.get("promoted_at"),
     }
 
 
@@ -1274,6 +1485,14 @@ def validate_team_run_brief(payload: dict[str, Any], label: str) -> None:
         raise ControlPlaneError(f"{label} project_memory must be a list")
     if not isinstance(payload["relevant_memories"], list):
         raise ControlPlaneError(f"{label} relevant_memories must be a list")
+    if "observed_preference_candidates" in payload:
+        if not isinstance(payload["observed_preference_candidates"], list):
+            raise ControlPlaneError(f"{label} observed_preference_candidates must be a list when provided")
+        for item in payload["observed_preference_candidates"]:
+            if not isinstance(item, dict) or "content" not in item or "signal_strength" not in item:
+                raise ControlPlaneError(
+                    f"{label} observed_preference_candidates entries must include content and signal_strength"
+                )
 
 
 def role_is_reviewer(role: dict[str, Any]) -> bool:
@@ -1309,6 +1528,16 @@ def render_team_run_brief_markdown(payload: dict[str, Any]) -> str:
             ]
         )
         if payload.get("relevant_memories")
+        else "- none"
+    )
+    observation_lines = (
+        "\n".join(
+            [
+                f"- `{item['signal_strength']}`: {item['content']}"
+                for item in payload.get("observed_preference_candidates", [])
+            ]
+        )
+        if payload.get("observed_preference_candidates")
         else "- none"
     )
     learnings = payload.get("recent_learnings", [])
@@ -1354,6 +1583,10 @@ def render_team_run_brief_markdown(payload: dict[str, Any]) -> str:
             "",
             relevant_memory_lines,
             "",
+            "## Preference Signals In This Request",
+            "",
+            observation_lines,
+            "",
             "## Recent Runs",
             "",
             run_lines,
@@ -1371,6 +1604,7 @@ def render_team_memory_markdown(
     summaries: list[dict[str, Any]],
     learnings: list[str],
     preferences: list[dict[str, Any]],
+    preference_observations: list[dict[str, Any]],
     project_notes: list[dict[str, Any]],
     cards: list[dict[str, Any]],
 ) -> str:
@@ -1390,6 +1624,16 @@ def render_team_memory_markdown(
         if preferences
         else "- none"
     )
+    observation_lines = (
+        "\n".join(
+            [
+                f"- `{item.get('status', 'observed')}` x{item.get('occurrences', 1)} | {item['content']}"
+                for item in reversed(preference_observations[-10:])
+            ]
+        )
+        if preference_observations
+        else "- none"
+    )
     project_lines = (
         "\n".join([f"- {item['content']}" for item in project_notes[-10:]])
         if project_notes
@@ -1404,6 +1648,7 @@ def render_team_memory_markdown(
             f"- run count: `{payload.get('run_count', 0)}`",
             f"- last run at: `{payload.get('last_run_at', 'n/a')}`",
             f"- preference items: `{len(preferences)}`",
+            f"- preference observations: `{len(preference_observations)}`",
             f"- project memory notes: `{len(project_notes)}`",
             f"- retrievable memory cards: `{len(cards)}`",
             "",
@@ -1414,6 +1659,10 @@ def render_team_memory_markdown(
             "## Preference Memory",
             "",
             preference_lines,
+            "",
+            "## Preference Observations",
+            "",
+            observation_lines,
             "",
             "## Project Memory",
             "",
@@ -1476,6 +1725,17 @@ def load_team_preferences(
     )
 
 
+def load_team_preference_observations(
+    team_id: str,
+    scope: str,
+    explicit_workspace: str | Path | None = None,
+) -> dict[str, Any]:
+    return load_optional_memory_object(
+        team_preference_observations_path(team_id, scope, explicit_workspace),
+        default_team_preference_observations_payload(team_id),
+    )
+
+
 def load_team_project_memory(
     team_id: str,
     scope: str,
@@ -1496,6 +1756,143 @@ def load_team_memory_cards(
         team_memory_cards_path(team_id, scope, explicit_workspace),
         default_team_memory_cards_payload(team_id),
     )
+
+
+def ensure_preference_memory_note(
+    preferences_payload: dict[str, Any],
+    *,
+    content: str,
+    tags: list[str],
+) -> tuple[dict[str, Any], bool]:
+    preferences = preferences_payload.setdefault("preferences", [])
+    for item in preferences:
+        if preference_items_match(item.get("content", ""), item.get("tags", []), content, tags):
+            merged_tags = summarize_memory_tags(set(item.get("tags", [])).union(tags))
+            item["tags"] = merged_tags
+            item["updated_at"] = utc_now()
+            if len(content.strip()) < len(item.get("content", "").strip()):
+                item["content"] = content.strip()
+            return item, False
+    normalized_note = normalize_memory_note({"content": content, "tags": tags}, kind="preference")
+    preferences.append(normalized_note)
+    preferences_payload["updated_at"] = utc_now()
+    return normalized_note, True
+
+
+def upsert_preference_observation(
+    observations_payload: dict[str, Any],
+    *,
+    candidate: dict[str, Any],
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    observations = observations_payload.setdefault("observations", [])
+    now = utc_now()
+    for item in observations:
+        if preference_items_match(item.get("content", ""), item.get("tags", []), candidate["content"], candidate["tags"]):
+            item["occurrences"] = int(item.get("occurrences", 1)) + 1
+            item["last_seen_at"] = now
+            item["updated_at"] = now
+            item["tags"] = summarize_memory_tags(set(item.get("tags", [])).union(candidate.get("tags", [])))
+            item["signal_markers"] = sorted(set(item.get("signal_markers", []) + candidate.get("signal_markers", [])))
+            if run_id:
+                item["source_run_ids"] = list(dict.fromkeys(item.get("source_run_ids", []) + [run_id]))[-10:]
+            if preference_strength_rank(candidate.get("signal_strength")) > preference_strength_rank(item.get("signal_strength")):
+                item["signal_strength"] = candidate["signal_strength"]
+                item["content"] = candidate["content"]
+            normalized_observation = normalize_preference_observation(item)
+            item.clear()
+            item.update(normalized_observation)
+            observations_payload["updated_at"] = now
+            return item
+    observation = normalize_preference_observation(
+        {
+            "content": candidate["content"],
+            "tags": candidate.get("tags", []),
+            "signal_strength": candidate.get("signal_strength", "weak"),
+            "signal_markers": candidate.get("signal_markers", []),
+            "occurrences": 1,
+            "status": "observed",
+            "first_seen_at": now,
+            "last_seen_at": now,
+        },
+        run_id=run_id,
+    )
+    observations.append(observation)
+    observations_payload["updated_at"] = now
+    return observation
+
+
+def maybe_promote_preference_observation(
+    observation: dict[str, Any],
+    *,
+    candidate: dict[str, Any],
+) -> str | None:
+    if observation.get("status") == "promoted":
+        return None
+    if candidate.get("signal_strength") == "strong" or observation.get("signal_strength") == "strong":
+        return "explicit_signal"
+    if int(observation.get("occurrences", 1)) >= 2:
+        return "repeated_signal"
+    return None
+
+
+def mark_preference_observation_promoted(observation: dict[str, Any], promotion_reason: str) -> None:
+    observation["status"] = "promoted"
+    observation["promotion_reason"] = promotion_reason
+    observation["promoted_at"] = utc_now()
+    observation["updated_at"] = observation["promoted_at"]
+
+
+def auto_learn_team_preferences(
+    *,
+    team_id: str,
+    scope: str,
+    request: str,
+    run_id: str | None,
+    cards_payload: dict[str, Any],
+    explicit_workspace: str | Path | None = None,
+    prepared_candidates: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, int]]:
+    candidates = prepared_candidates if prepared_candidates is not None else extract_preference_candidates(request)
+    preferences_payload = load_team_preferences(team_id, scope, explicit_workspace)
+    observations_payload = load_team_preference_observations(team_id, scope, explicit_workspace)
+    observed_count = 0
+    promoted_count = 0
+    for candidate in candidates:
+        observation = upsert_preference_observation(
+            observations_payload,
+            candidate=candidate,
+            run_id=run_id,
+        )
+        observed_count += 1
+        promotion_reason = maybe_promote_preference_observation(observation, candidate=candidate)
+        if promotion_reason is None:
+            continue
+        preference_note, created = ensure_preference_memory_note(
+            preferences_payload,
+            content=observation["content"],
+            tags=observation.get("tags", []),
+        )
+        mark_preference_observation_promoted(observation, promotion_reason)
+        ensure_memory_card(
+            cards_payload,
+            kind="preference",
+            content=preference_note["content"],
+            tags=preference_note.get("tags", []),
+            source_run_id=run_id,
+        )
+        if created:
+            promoted_count += 1
+    if observed_count:
+        observations_payload["updated_at"] = utc_now()
+        write_json(team_preference_observations_path(team_id, scope, explicit_workspace), observations_payload)
+    if observed_count or promoted_count:
+        write_json(team_preferences_path(team_id, scope, explicit_workspace), preferences_payload)
+    return preferences_payload, observations_payload, {
+        "candidates": len(candidates),
+        "observed": observed_count,
+        "promoted": promoted_count,
+    }
 
 
 def record_team_preference(
@@ -1596,8 +1993,10 @@ def prepare_team_run(
     summaries = load_optional_list(team_run_index_path(payload["team_id"], item_scope, explicit_workspace))
     learnings = load_optional_list(team_learning_path(payload["team_id"], item_scope, explicit_workspace))
     preferences_payload = load_team_preferences(payload["team_id"], item_scope, explicit_workspace)
+    observations_payload = load_team_preference_observations(payload["team_id"], item_scope, explicit_workspace)
     project_payload = load_team_project_memory(payload["team_id"], item_scope, explicit_workspace)
     cards_payload = load_team_memory_cards(payload["team_id"], item_scope, explicit_workspace)
+    preference_candidates = extract_preference_candidates(request)
     relevant_memories = retrieve_relevant_team_memory(
         request,
         preferences_payload=preferences_payload,
@@ -1621,6 +2020,7 @@ def prepare_team_run(
         "preference_memory": preferences_payload.get("preferences", [])[-5:],
         "project_memory": project_payload.get("notes", [])[-5:],
         "relevant_memories": relevant_memories,
+        "observed_preference_candidates": preference_candidates,
         "prepared_at": utc_now(),
     }
     validate_team_run_brief(brief_payload, f"team run brief {run_id}")
@@ -1638,6 +2038,8 @@ def prepare_team_run(
         f"recent_runs_loaded: {len(brief_payload['recent_run_summaries'])}",
         f"recent_learnings_loaded: {len(brief_payload['recent_learnings'])}",
         f"preferences_loaded: {len(brief_payload['preference_memory'])}",
+        f"preference_observations_loaded: {len(observations_payload.get('observations', []))}",
+        f"preference_signals_detected: {len(preference_candidates)}",
         f"project_memory_loaded: {len(brief_payload['project_memory'])}",
         f"relevant_memories_loaded: {len(brief_payload['relevant_memories'])}",
         f"review_mode: {payload['review_mode']['mode']}",
@@ -1659,6 +2061,14 @@ def record_team_run(
 ) -> list[str]:
     item_scope, team_dir, payload = find_team_pack(team_id, scope, explicit_workspace)
     resolved_run_id = run_id or next_team_run_id(team_id)
+    brief_candidates: list[dict[str, Any]] | None = None
+    brief_path = team_run_brief_path(payload["team_id"], item_scope, resolved_run_id, explicit_workspace)
+    if brief_path.exists():
+        brief_payload = load_json(brief_path)
+        validate_team_run_brief(brief_payload, display_path(brief_path))
+        raw_candidates = brief_payload.get("observed_preference_candidates")
+        if isinstance(raw_candidates, list):
+            brief_candidates = raw_candidates
     run_payload = {
         "version": "1.0.0",
         "run_id": resolved_run_id,
@@ -1683,7 +2093,6 @@ def record_team_run(
     )
     write_json(run_record_path, run_payload)
     run_summary_markdown_path.write_text(render_team_run_summary_markdown(run_payload), encoding="utf-8")
-    brief_path = team_run_brief_path(payload["team_id"], item_scope, resolved_run_id, explicit_workspace)
     brief_markdown_path = team_run_brief_markdown_path(payload["team_id"], item_scope, resolved_run_id, explicit_workspace)
     messages = [f"recorded team run: {display_path(run_record_path)}"]
     if brief_path.exists():
@@ -1736,6 +2145,20 @@ def record_team_run(
             tags=sorted(tokenize_memory_text(f"{request} {item}")),
             source_run_id=resolved_run_id,
         )
+
+    preference_metrics = {"candidates": 0, "observed": 0, "promoted": 0}
+    preferences_payload = load_team_preferences(payload["team_id"], item_scope, explicit_workspace)
+    observations_payload = load_team_preference_observations(payload["team_id"], item_scope, explicit_workspace)
+    if payload.get("memory_policy", {}).get("store_preference_memory", True):
+        preferences_payload, observations_payload, preference_metrics = auto_learn_team_preferences(
+            team_id=payload["team_id"],
+            scope=item_scope,
+            request=request,
+            run_id=resolved_run_id,
+            cards_payload=cards_payload,
+            explicit_workspace=explicit_workspace,
+            prepared_candidates=brief_candidates,
+        )
     cards_payload["updated_at"] = utc_now()
     write_json(team_memory_cards_path(payload["team_id"], item_scope, explicit_workspace), cards_payload)
 
@@ -1743,7 +2166,6 @@ def record_team_run(
     next_payload["last_run_at"] = run_payload["recorded_at"]
     next_payload["run_count"] = int(payload.get("run_count", 0)) + 1
     write_json(team_dir / "team.json", next_payload)
-    preferences_payload = load_team_preferences(payload["team_id"], item_scope, explicit_workspace)
     project_payload = load_team_project_memory(payload["team_id"], item_scope, explicit_workspace)
     memory_markdown_path = team_memory_markdown_path(payload["team_id"], item_scope, explicit_workspace)
     memory_markdown_path.write_text(
@@ -1752,6 +2174,7 @@ def record_team_run(
             summaries,
             stored_learnings,
             preferences_payload.get("preferences", []),
+            observations_payload.get("observations", []),
             project_payload.get("notes", []),
             cards_payload.get("cards", []),
         ),
@@ -1761,8 +2184,12 @@ def record_team_run(
         [
             f"updated team summaries: {display_path(memory_dir / 'run-summaries.json')}",
             f"updated team learnings: {display_path(memory_dir / 'team-learnings.json')}",
+            f"updated team preference observations: {display_path(team_preference_observations_path(payload['team_id'], item_scope, explicit_workspace))}",
             f"updated team memory cards: {display_path(team_memory_cards_path(payload['team_id'], item_scope, explicit_workspace))}",
             f"updated team memory markdown: {display_path(memory_markdown_path)}",
+            f"auto_preference_candidates: {preference_metrics['candidates']}",
+            f"auto_preference_observations: {preference_metrics['observed']}",
+            f"auto_promoted_preferences: {preference_metrics['promoted']}",
         ]
     )
     return messages
@@ -1873,6 +2300,7 @@ def show_team_memory(
     summaries = load_optional_list(memory_dir / "run-summaries.json")
     learnings = load_optional_list(memory_dir / "team-learnings.json")
     preferences_payload = load_team_preferences(payload["team_id"], item_scope, explicit_workspace)
+    observations_payload = load_team_preference_observations(payload["team_id"], item_scope, explicit_workspace)
     project_payload = load_team_project_memory(payload["team_id"], item_scope, explicit_workspace)
     cards_payload = load_team_memory_cards(payload["team_id"], item_scope, explicit_workspace)
     lines = [
@@ -1882,9 +2310,11 @@ def show_team_memory(
         f"last_run_at: {payload.get('last_run_at', 'n/a')}",
         f"memory_markdown: {display_path(team_memory_markdown_path(payload['team_id'], item_scope, explicit_workspace))}",
         f"preferences_path: {display_path(team_preferences_path(payload['team_id'], item_scope, explicit_workspace))}",
+        f"preference_observations_path: {display_path(team_preference_observations_path(payload['team_id'], item_scope, explicit_workspace))}",
         f"project_memory_path: {display_path(team_project_memory_path(payload['team_id'], item_scope, explicit_workspace))}",
         f"memory_cards_path: {display_path(team_memory_cards_path(payload['team_id'], item_scope, explicit_workspace))}",
         f"preference_count: {len(preferences_payload.get('preferences', []))}",
+        f"preference_observation_count: {len(observations_payload.get('observations', []))}",
         f"project_note_count: {len(project_payload.get('notes', []))}",
         f"memory_card_count: {len(cards_payload.get('cards', []))}",
         "recent_runs:",
@@ -1906,6 +2336,13 @@ def show_team_memory(
     if preferences:
         for item in preferences[-limit:]:
             lines.append(f"- {item['content']}")
+    else:
+        lines.append("- none")
+    lines.append("preference_observations:")
+    observations = observations_payload.get("observations", [])
+    if observations:
+        for item in observations[-limit:]:
+            lines.append(f"- {item.get('status', 'observed')} x{item.get('occurrences', 1)} :: {item['content']}")
     else:
         lines.append("- none")
     lines.append("project_memory:")
@@ -2021,11 +2458,16 @@ def ensure_team_pack_assets(team_dir: Path, payload: dict[str, Any]) -> dict[str
     summaries = load_optional_list(memory_dir / "run-summaries.json")
     learnings = load_optional_list(memory_dir / "team-learnings.json")
     preferences_path = memory_dir / "preferences.json"
+    preference_observations_path = memory_dir / "preference-observations.json"
     project_memory_path = memory_dir / "project-memory.json"
     memory_cards_path = memory_dir / "memory-cards.json"
     preferences_payload = load_optional_memory_object(
         preferences_path,
         default_team_preferences_payload(normalized_payload["team_id"]),
+    )
+    observations_payload = load_optional_memory_object(
+        preference_observations_path,
+        default_team_preference_observations_payload(normalized_payload["team_id"]),
     )
     project_payload = load_optional_memory_object(
         project_memory_path,
@@ -2067,10 +2509,15 @@ def ensure_team_pack_assets(team_dir: Path, payload: dict[str, Any]) -> dict[str
         summaries,
         learnings,
         preferences_payload.get("preferences", []),
+        observations_payload.get("observations", []),
         project_payload.get("notes", []),
         cards_payload.get("cards", []),
     )
     write_preferences = not preferences_path.exists() or normalize(load_json(preferences_path)) != normalize(preferences_payload)
+    write_preference_observations = (
+        not preference_observations_path.exists()
+        or normalize(load_json(preference_observations_path)) != normalize(observations_payload)
+    )
     write_project_memory = (
         not project_memory_path.exists()
         or normalize(load_json(project_memory_path)) != normalize(project_payload)
@@ -2085,6 +2532,8 @@ def ensure_team_pack_assets(team_dir: Path, payload: dict[str, Any]) -> dict[str
         write_json(manifest_path, normalized_payload)
     if write_preferences:
         write_json(preferences_path, preferences_payload)
+    if write_preference_observations:
+        write_json(preference_observations_path, observations_payload)
     if write_project_memory:
         write_json(project_memory_path, project_payload)
     if write_memory_cards:
@@ -2252,6 +2701,7 @@ def team_doctor(scope: str = "all", explicit_workspace: str | Path | None = None
         summaries_path = team_dir / "memory" / "run-summaries.json"
         learnings_path = team_dir / "memory" / "team-learnings.json"
         preferences_path = team_dir / "memory" / "preferences.json"
+        preference_observations_path = team_dir / "memory" / "preference-observations.json"
         project_memory_path = team_dir / "memory" / "project-memory.json"
         memory_cards_path = team_dir / "memory" / "memory-cards.json"
         summaries = load_optional_list(summaries_path)
@@ -2259,6 +2709,10 @@ def team_doctor(scope: str = "all", explicit_workspace: str | Path | None = None
         preferences_payload = load_optional_memory_object(
             preferences_path,
             default_team_preferences_payload(payload["team_id"]),
+        )
+        observations_payload = load_optional_memory_object(
+            preference_observations_path,
+            default_team_preference_observations_payload(payload["team_id"]),
         )
         project_payload = load_optional_memory_object(
             project_memory_path,
@@ -2274,6 +2728,10 @@ def team_doctor(scope: str = "all", explicit_workspace: str | Path | None = None
             raise ControlPlaneError(f"{display_path(learnings_path)} must contain strings")
         if not isinstance(preferences_payload.get("preferences", []), list):
             raise ControlPlaneError(f"{display_path(preferences_path)} preferences must be a list")
+        if not isinstance(observations_payload.get("observations", []), list):
+            raise ControlPlaneError(f"{display_path(preference_observations_path)} observations must be a list")
+        for item in observations_payload.get("observations", []):
+            normalize_preference_observation(item)
         if not isinstance(project_payload.get("notes", []), list):
             raise ControlPlaneError(f"{display_path(project_memory_path)} notes must be a list")
         if not isinstance(cards_payload.get("cards", []), list):

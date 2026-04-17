@@ -32,6 +32,14 @@ Use when the request is about research, PRD/planning, building features, bug fix
 2. Team Pack Mode
 Use when the request is about creating a reusable specialist team, or when the request explicitly targets an existing `AEGIS-xxx` team.
 
+Installed Team Packs are invoked as slash commands such as `/aegis-video ...` or `/aegis-nx ...`.
+
+When operating a Team Pack, remember:
+
+- load team memory first with `aegis ctl show-team-memory --team <TEAM_ID> --scope <SCOPE>`
+- stable preferences are learned automatically from completed runs
+- only use `record-team-preference` when you intentionally want to force a preference into long-term memory immediately
+
 When you need the control plane fallback path, use:
 
 ```bash

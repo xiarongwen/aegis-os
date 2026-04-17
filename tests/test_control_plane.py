@@ -863,6 +863,170 @@ class ControlPlaneTeamPackTests(unittest.TestCase):
         self.assertTrue(any("recent_runs_loaded: 1" in line for line in next_result))
         self.assertTrue(any("recent_learnings_loaded: 1" in line for line in next_result))
 
+    def test_explicit_preference_signal_auto_promotes_after_recording_run(self) -> None:
+        cli.create_team_pack(
+            team_id="AEGIS-video-memory",
+            display_name="AEGIS Video Memory",
+            mission="Long-lived team for video planning and editing direction.",
+            domain="video-editing",
+            scope="global",
+            role_specs=[],
+            playbook_steps=[],
+            review_mode="standard",
+            install=False,
+        )
+        request = "记住，以后都先给 hook，再给完整脚本。"
+        prepared = cli.prepare_team_run(
+            team_id="AEGIS-video-memory",
+            request=request,
+            scope="global",
+        )
+        run_id = next(line for line in prepared if line.startswith("run_id: ")).split(": ", 1)[1]
+        self.assertTrue(any("preference_signals_detected: 1" in line for line in prepared))
+
+        cli.record_team_run(
+            team_id="AEGIS-video-memory",
+            scope="global",
+            request=request,
+            summary="Delivered a hook-first brief and the full script afterwards.",
+            status="completed",
+            artifacts=["brief.md"],
+            feedback=[],
+            learnings=[],
+            run_id=run_id,
+        )
+        team_dir = self.team_home / "teams" / "global" / "AEGIS-video-memory"
+        preferences_payload = cli.load_json(team_dir / "memory" / "preferences.json")
+        observations_payload = cli.load_json(team_dir / "memory" / "preference-observations.json")
+        cards_payload = cli.load_json(team_dir / "memory" / "memory-cards.json")
+        self.assertEqual(len(preferences_payload["preferences"]), 1)
+        self.assertEqual(observations_payload["observations"][0]["status"], "promoted")
+        self.assertEqual(observations_payload["observations"][0]["occurrences"], 1)
+        self.assertTrue(any(item["kind"] == "preference" for item in cards_payload["cards"]))
+
+        next_result = cli.prepare_team_run(
+            team_id="AEGIS-video-memory",
+            request="再做一个版本，hook 要更强。",
+            scope="global",
+        )
+        next_run_id = next(line for line in next_result if line.startswith("run_id: ")).split(": ", 1)[1]
+        next_brief = cli.load_json(team_dir / "runs" / f"{next_run_id}.brief.json")
+        self.assertEqual(len(next_brief["preference_memory"]), 1)
+        self.assertTrue(any("preference_observation_count: 1" in line for line in cli.show_team_memory("AEGIS-video-memory", "global")))
+
+    def test_repeated_weak_preference_signal_promotes_after_second_run(self) -> None:
+        cli.create_team_pack(
+            team_id="AEGIS-video-repeat",
+            display_name="AEGIS Video Repeat",
+            mission="Long-lived team for video planning and editing direction.",
+            domain="video-editing",
+            scope="global",
+            role_specs=[],
+            playbook_steps=[],
+            review_mode="standard",
+            install=False,
+        )
+        first_request = "这次先给 hook，再给完整脚本。"
+        first_prepare = cli.prepare_team_run(
+            team_id="AEGIS-video-repeat",
+            request=first_request,
+            scope="global",
+        )
+        first_run_id = next(line for line in first_prepare if line.startswith("run_id: ")).split(": ", 1)[1]
+        cli.record_team_run(
+            team_id="AEGIS-video-repeat",
+            scope="global",
+            request=first_request,
+            summary="Delivered the hook-first plan.",
+            status="completed",
+            artifacts=["brief.md"],
+            feedback=[],
+            learnings=[],
+            run_id=first_run_id,
+        )
+
+        team_dir = self.team_home / "teams" / "global" / "AEGIS-video-repeat"
+        first_preferences = cli.load_json(team_dir / "memory" / "preferences.json")
+        first_observations = cli.load_json(team_dir / "memory" / "preference-observations.json")
+        self.assertEqual(len(first_preferences["preferences"]), 0)
+        self.assertEqual(first_observations["observations"][0]["occurrences"], 1)
+        self.assertEqual(first_observations["observations"][0]["status"], "observed")
+
+        second_request = "还是先给 hook，再给完整脚本。"
+        second_prepare = cli.prepare_team_run(
+            team_id="AEGIS-video-repeat",
+            request=second_request,
+            scope="global",
+        )
+        second_run_id = next(line for line in second_prepare if line.startswith("run_id: ")).split(": ", 1)[1]
+        cli.record_team_run(
+            team_id="AEGIS-video-repeat",
+            scope="global",
+            request=second_request,
+            summary="Repeated the hook-first delivery order.",
+            status="completed",
+            artifacts=["brief-v2.md"],
+            feedback=[],
+            learnings=[],
+            run_id=second_run_id,
+        )
+
+        second_preferences = cli.load_json(team_dir / "memory" / "preferences.json")
+        second_observations = cli.load_json(team_dir / "memory" / "preference-observations.json")
+        self.assertEqual(len(second_preferences["preferences"]), 1)
+        self.assertEqual(second_observations["observations"][0]["occurrences"], 2)
+        self.assertEqual(second_observations["observations"][0]["status"], "promoted")
+
+        future_prepare = cli.prepare_team_run(
+            team_id="AEGIS-video-repeat",
+            request="做一个新版本。",
+            scope="global",
+        )
+        future_run_id = next(line for line in future_prepare if line.startswith("run_id: ")).split(": ", 1)[1]
+        future_brief = cli.load_json(team_dir / "runs" / f"{future_run_id}.brief.json")
+        self.assertEqual(len(future_brief["preference_memory"]), 1)
+
+    def test_one_off_weak_preference_signal_stays_as_observation(self) -> None:
+        cli.create_team_pack(
+            team_id="AEGIS-video-observe",
+            display_name="AEGIS Video Observe",
+            mission="Long-lived team for video planning and editing direction.",
+            domain="video-editing",
+            scope="global",
+            role_specs=[],
+            playbook_steps=[],
+            review_mode="standard",
+            install=False,
+        )
+        request = "这次先给 hook，再给完整脚本。"
+        prepared = cli.prepare_team_run(
+            team_id="AEGIS-video-observe",
+            request=request,
+            scope="global",
+        )
+        run_id = next(line for line in prepared if line.startswith("run_id: ")).split(": ", 1)[1]
+        cli.record_team_run(
+            team_id="AEGIS-video-observe",
+            scope="global",
+            request=request,
+            summary="Delivered the requested order for this run.",
+            status="completed",
+            artifacts=["brief.md"],
+            feedback=[],
+            learnings=[],
+            run_id=run_id,
+        )
+
+        team_dir = self.team_home / "teams" / "global" / "AEGIS-video-observe"
+        preferences_payload = cli.load_json(team_dir / "memory" / "preferences.json")
+        observations_payload = cli.load_json(team_dir / "memory" / "preference-observations.json")
+        self.assertEqual(len(preferences_payload["preferences"]), 0)
+        self.assertEqual(len(observations_payload["observations"]), 1)
+        self.assertEqual(observations_payload["observations"][0]["status"], "observed")
+        memory_view = cli.show_team_memory("AEGIS-video-observe", "global")
+        self.assertTrue(any("preference_observation_count: 1" in line for line in memory_view))
+        self.assertTrue(any("preference_count: 0" in line for line in memory_view))
+
     def test_invoke_and_complete_team_run_support_cli_lifecycle(self) -> None:
         cli.create_team_pack(
             team_id="AEGIS-video-cli",

@@ -153,8 +153,8 @@ aegis ctl show-team-pack --team <TEAM_ID> --scope <SCOPE>
 
 4. Tell the user how to invoke the team next time, for example:
 
-- `AEGIS-nx ...`
-- `AEGIS-video ...`
+- `/aegis-nx ...`
+- `/aegis-video ...`
 
 When working as an installed Team Pack:
 
@@ -165,12 +165,22 @@ aegis ctl invoke-team-pack --team <TEAM_ID> --scope <SCOPE> --request "<user req
 ```
 
 2. Read the generated brief and use it to decide which internal roles should activate.
-3. Execute the work using the host's existing tools and sub-agent capabilities.
-4. Run the built-in review/fix loop before final delivery.
-5. Complete the run and record any learnings:
+3. Read `show-team-memory` output as active context before substantial work.
+4. Stable preferences are learned automatically from the request when the run is completed:
+   - strong signals like `默认` / `以后都` / `记住` / `always` can promote in the same run
+   - weak one-off phrases should remain observations until repeated
+5. Execute the work using the host's existing tools and sub-agent capabilities.
+6. Run the built-in review/fix loop before final delivery.
+7. Complete the run and record any learnings:
 
 ```bash
 aegis ctl complete-team-run --team <TEAM_ID> --scope <SCOPE> --run-id "<run_id>" --summary "<final summary>" --learning "<team learning>"
+```
+
+If you need to force a stable preference immediately, use:
+
+```bash
+aegis ctl record-team-preference --team <TEAM_ID> --scope <SCOPE> --note "<stable preference>"
 ```
 
 If you need finer control, you may still use `prepare-team-run`, `show-team-run`, and `record-team-run` directly.
