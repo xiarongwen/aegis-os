@@ -4,14 +4,30 @@
 set -euo pipefail
 
 AEGIS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WORKSPACE_ROOT="${AEGIS_WORKSPACE_ROOT:-$(pwd)}"
+
+resolve_workspace_root() {
+  if [[ -n "${AEGIS_WORKSPACE_ROOT:-}" ]]; then
+    (cd "$AEGIS_WORKSPACE_ROOT" && pwd)
+    return 0
+  fi
+  if git_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+    printf '%s\n' "$git_root"
+    return 0
+  fi
+  pwd
+}
+
+WORKSPACE_ROOT="$(resolve_workspace_root)"
 
 echo "================================"
 echo "AEGIS v1 Bootstrap"
 echo "================================"
 
-if ! command -v claude >/dev/null 2>&1; then
-  echo "[ERROR] Claude Code CLI not found. Install with: npm install -g @anthropic-ai/claude-code"
+if ! command -v claude >/dev/null 2>&1 && ! command -v codex >/dev/null 2>&1; then
+  echo "[ERROR] Neither Claude Code CLI nor Codex CLI was found."
+  echo "        Install one of them first:"
+  echo "        - Claude Code: npm install -g @anthropic-ai/claude-code"
+  echo "        - Codex CLI: make sure \`codex\` is installed and in PATH"
   exit 1
 fi
 
@@ -35,4 +51,4 @@ echo "  1. cd $WORKSPACE_ROOT"
 echo "  2. In Claude Code, use: /aegis 帮我开发一个聊天页面"
 echo "  3. Or in Codex, invoke the aegis skill inside the current session"
 echo "  4. Team Packs also install slash commands like /aegis-video when available"
-echo "  5. Use aegis / aegisctl for fallback/debug from any workspace"
+echo "  5. For CLI fallback/debug, use aegis run --runtime codex or aegis run --runtime claude"

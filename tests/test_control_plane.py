@@ -7,12 +7,15 @@ import unittest
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tools.control_plane import cli
 
 
 def fake_git(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+    if args[:2] == ("check-ignore", "-q"):
+        return subprocess.CompletedProcess(["git", *args], 1, "", "")
     return subprocess.CompletedProcess(["git", *args], 0, "", "")
 
 
@@ -185,6 +188,48 @@ class ControlPlaneReviewLoopTests(unittest.TestCase):
         self.assertEqual(state["current_state"], "BLOCKED")
         self.assertEqual(len(state["blockers"]), 1)
         self.assertEqual(state["blockers"][0]["state"], "L1_REVIEW")
+
+
+class ControlPlaneWorkspaceRuntimeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-runtime-workspace-"))
+        init_git_workspace(self.workspace_dir)
+        self.env_patch = patch.dict(os.environ, {"AEGIS_WORKSPACE_ROOT": str(self.workspace_dir)})
+        self.env_patch.start()
+
+    def tearDown(self) -> None:
+        self.env_patch.stop()
+        shutil.rmtree(self.workspace_dir, ignore_errors=True)
+
+    def test_ensure_workspace_layout_materializes_runtime_assets(self) -> None:
+        cli.ensure_workspace_layout()
+        self.assertTrue((self.workspace_dir / ".aegis" / "core" / "registry.json").exists())
+        self.assertTrue((self.workspace_dir / ".aegis" / "core" / "orchestrator.yml").exists())
+        self.assertTrue((self.workspace_dir / ".aegis" / "agents" / "market-research" / "SKILL.md").exists())
+        self.assertTrue((self.workspace_dir / ".aegis" / "shared-contexts" / "tool-contracts.yml").exists())
+        self.assertTrue((self.workspace_dir / ".aegis" / "hooks" / "pre-agent-run.sh").exists())
+        self.assertTrue((self.workspace_dir / ".aegis" / "schedules" / "nightly-evolution.sh").exists())
+
+        hook_content = (self.workspace_dir / ".aegis" / "hooks" / "pre-agent-run.sh").read_text(encoding="utf-8")
+        self.assertIn("aegis ctl", hook_content)
+        self.assertIn("run_control_plane", hook_content)
+
+    def test_aegis_attach_workspace_from_subdirectory_uses_git_root(self) -> None:
+        nested_dir = self.workspace_dir / "projects" / "app"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        env.pop("AEGIS_WORKSPACE_ROOT", None)
+        completed = subprocess.run(
+            ["bash", str(cli.ROOT / "aegis"), "ctl", "attach-workspace"],
+            cwd=str(nested_dir),
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue((self.workspace_dir / ".aegis" / "project.yml").exists())
+        self.assertFalse((nested_dir / ".aegis" / "project.yml").exists())
 
 
 class ControlPlaneDevelopmentGovernanceTests(unittest.TestCase):
@@ -391,7 +436,85 @@ class ControlPlaneDevelopmentGovernanceTests(unittest.TestCase):
         self.write_frontend_outputs()
         with patch("tools.control_plane.cli.git", side_effect=fake_git):
             result = cli.post_agent_run("frontend-squad", self.workflow)
-        self.assertTrue(any("committed workflow changes" in line or "no workflow changes" in line for line in result))
+        self.assertTrue(
+            any(
+                "committed workflow changes" in line
+                or "no workflow changes" in line
+                or "workflow changes are gitignored; skipping commit" in line
+                for line in result
+            )
+        )
+
+    def test_l3_post_run_normalizes_legacy_reuse_audit_shape(self) -> None:
+        frontend_scope = ".aegis/runs/{workflow}/l3-dev/frontend/**".replace("{workflow}", self.workflow)
+        backend_scope = ".aegis/runs/{workflow}/l3-dev/backend/**".replace("{workflow}", self.workflow)
+        self.write_task_breakdown(frontend_scope, backend_scope)
+        self.write_implementation_contracts(frontend_scope, backend_scope)
+        self.promote_to_l3()
+        cli.pre_agent_run("frontend-squad", self.workflow)
+
+        target = self.workflow_root / "l3-dev" / "frontend"
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "README.md").write_text("frontend\n", encoding="utf-8")
+        (target / "app.js").write_text("console.log('ok');\n", encoding="utf-8")
+        cli.write_json(
+            target / "reuse-audit.json",
+            {
+                "workflow_id": self.workflow,
+                "agent": "frontend-squad",
+                "task_id": "FE-1",
+                "scanned_assets": [
+                    {
+                        "path": "src/legacy",
+                        "reason": "checked for reuse",
+                        "result": "none",
+                    }
+                ],
+                "reused_assets": [],
+                "duplication_risk_checks": ["created only scoped files"],
+                "host_capabilities_used": [
+                    {
+                        "abstract_action": "resolve_host_capability",
+                        "runtime_binding": "mapped host capability",
+                        "evidence": "README.md",
+                    }
+                ],
+            },
+        )
+
+        with patch("tools.control_plane.cli.git", side_effect=fake_git):
+            result = cli.post_agent_run("frontend-squad", self.workflow)
+
+        payload = cli.load_json(target / "reuse-audit.json")
+        self.assertTrue(
+            any(
+                "committed workflow changes" in line
+                or "no workflow changes" in line
+                or "workflow changes are gitignored; skipping commit" in line
+                for line in result
+            )
+        )
+        self.assertEqual(payload["agent_id"], "frontend-squad")
+        self.assertEqual(payload["completed_tasks"], ["FE-1"])
+        self.assertEqual(payload["scanned_existing_assets"], ["src/legacy"])
+        self.assertEqual(payload["requirements_lock_hash"], cli.load_state(self.workflow)["requirements_lock_hash"])
+        self.assertIn("app.js", payload["new_assets"])
+        self.assertEqual(payload["host_capabilities_used"][0]["action"], "resolve_host_capability")
+        self.assertIn("mapped host capability", payload["host_capabilities_used"][0]["resolution"])
+
+    def test_post_agent_run_skips_commit_when_workflow_dir_is_gitignored(self) -> None:
+        frontend_scope = ".aegis/runs/{workflow}/l3-dev/frontend/**".replace("{workflow}", self.workflow)
+        backend_scope = ".aegis/runs/{workflow}/l3-dev/backend/**".replace("{workflow}", self.workflow)
+        self.write_task_breakdown(frontend_scope, backend_scope)
+        self.write_implementation_contracts(frontend_scope, backend_scope)
+        self.promote_to_l3()
+        cli.pre_agent_run("frontend-squad", self.workflow)
+        self.write_frontend_outputs()
+        (self.workspace_dir / ".gitignore").write_text(".aegis/runs/\n", encoding="utf-8")
+
+        result = cli.post_agent_run("frontend-squad", self.workflow)
+
+        self.assertIn(f"workflow changes are gitignored; skipping commit for {self.workflow}", result)
 
 
 class ControlPlaneWorkspacePolicyTests(unittest.TestCase):
@@ -525,7 +648,27 @@ class ControlPlaneWorkspaceResolutionTests(unittest.TestCase):
             check=False,
         )
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("failed to resolve workspace for workflow missing-workflow", completed.stderr)
+        self.assertTrue(
+            "failed to resolve workspace for workflow missing-workflow" in completed.stderr
+            or "workflow state missing" in completed.stderr
+        )
+
+    def test_resolve_workspace_accepts_attached_workspace_for_new_workflow(self) -> None:
+        workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-new-workflow-workspace-"))
+        try:
+            init_git_workspace(workspace_dir)
+            with patch.dict(os.environ, {"AEGIS_WORKSPACE_ROOT": str(workspace_dir)}, clear=False):
+                cli.ensure_workspace_layout()
+            with patch.dict(os.environ, {}, clear=True):
+                previous_cwd = Path.cwd()
+                os.chdir(workspace_dir)
+                try:
+                    resolved = cli.resolve_workspace(workflow="brand-new-workflow")
+                finally:
+                    os.chdir(previous_cwd)
+            self.assertEqual(resolved, workspace_dir.resolve())
+        finally:
+            shutil.rmtree(workspace_dir, ignore_errors=True)
 
     def test_write_gate_review_emits_valid_schema(self) -> None:
         workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-gate-workspace-"))
@@ -562,6 +705,199 @@ class ControlPlaneWorkspaceResolutionTests(unittest.TestCase):
                 cli.validate_review_artifact(gate_dir / "review-passed.json", "research-qa-agent", 8.0)
         finally:
             shutil.rmtree(workspace_dir, ignore_errors=True)
+
+    def test_workflow_snapshot_reports_runtime_choices_and_artifacts(self) -> None:
+        from tools.control_plane import tui
+
+        workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-ui-workspace-"))
+        try:
+            init_git_workspace(workspace_dir)
+            with patch.dict(
+                os.environ,
+                {
+                    "AEGIS_WORKSPACE_ROOT": str(workspace_dir),
+                    "AEGIS_HOST_RUNTIME": "claude",
+                },
+                clear=False,
+            ):
+                cli.ensure_workspace_layout()
+                workflow = f"ui-workflow-{uuid.uuid4().hex[:8]}"
+                cli.initialize_workflow(workflow)
+                state = cli.load_state(workflow)
+                state["current_state"] = "L3_DEVELOP"
+                state["workflow_type"] = "build"
+                state["next_state_hint"] = "L4_REVIEW"
+                cli.write_json(cli.state_path(workflow), state)
+                cli.write_json(
+                    cli.workflow_root(workflow) / "intent-lock.json",
+                    {
+                        "normalized_goal": "Add a minimal login flow",
+                    },
+                )
+                cli.write_json(cli.requirements_lock_path(workflow), {"requirements": []})
+                with patch("tools.automation_runner.cli.available_runtimes", return_value=["codex", "claude"]):
+                    snapshot = tui.build_workflow_snapshot(workflow)
+            self.assertEqual(snapshot.workflow_id, workflow)
+            self.assertEqual(snapshot.runtime, "claude")
+            self.assertEqual(snapshot.dispatch_runtime, "codex")
+            self.assertIn("host runtime", snapshot.runtime_rationale)
+            self.assertIn("dispatch selected", snapshot.dispatch_rationale)
+            artifacts = {label: present for label, present, _ in snapshot.artifacts}
+            self.assertTrue(artifacts["intent lock"])
+            self.assertTrue(artifacts["requirements lock"])
+            self.assertFalse(artifacts["task breakdown"])
+        finally:
+            shutil.rmtree(workspace_dir, ignore_errors=True)
+
+    def test_workflow_ids_are_sorted_by_updated_at_desc(self) -> None:
+        from tools.control_plane import tui
+
+        workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-ui-index-workspace-"))
+        try:
+            init_git_workspace(workspace_dir)
+            with patch.dict(os.environ, {"AEGIS_WORKSPACE_ROOT": str(workspace_dir)}, clear=False):
+                cli.ensure_workspace_layout()
+                older = f"workflow-old-{uuid.uuid4().hex[:6]}"
+                newer = f"workflow-new-{uuid.uuid4().hex[:6]}"
+                cli.initialize_workflow(older)
+                cli.initialize_workflow(newer)
+                index_payload = cli.load_workflow_index()
+                index_payload["workflows"][older]["updated_at"] = "2026-04-20T10:00:00Z"
+                index_payload["workflows"][newer]["updated_at"] = "2026-04-20T11:00:00Z"
+                cli.save_workflow_index(index_payload)
+                ordered = tui.workflow_ids()
+            self.assertIn(newer, ordered)
+            self.assertIn(older, ordered)
+            self.assertLess(ordered.index(newer), ordered.index(older))
+        finally:
+            shutil.rmtree(workspace_dir, ignore_errors=True)
+
+    def test_tui_execute_new_request_uses_runner_auto_runtime(self) -> None:
+        from tools.control_plane import tui
+
+        with patch("tools.automation_runner.cli.choose_runtime_for_state", return_value=SimpleNamespace(runtime="codex", rationale="auto runtime")) as choose_runtime:
+            with patch("tools.automation_runner.cli.pick_adapter", return_value=object()) as pick_adapter:
+                with patch("tools.automation_runner.cli.AutomationRunner") as runner_cls:
+                    with patch(
+                        "tools.automation_runner.cli.summarize_with_runtime_choice",
+                        side_effect=lambda payload, runtime_choice: {
+                            **payload,
+                            "runtime": runtime_choice.runtime,
+                            "runtime_rationale": runtime_choice.rationale,
+                        },
+                    ):
+                        runner = runner_cls.return_value
+                        runner.bootstrap.return_value = ("wf-1", None)
+                        runner.resume.return_value = {"workflow_id": "wf-1", "status": "finished"}
+                        result = tui.execute_new_request("build login flow")
+        choose_runtime.assert_called_once()
+        pick_adapter.assert_called_once_with("codex")
+        runner.bootstrap.assert_called_once_with("build login flow", event_callback=None)
+        runner.resume.assert_called_once()
+        self.assertEqual(result["workflow_id"], "wf-1")
+        self.assertEqual(result["runtime"], "codex")
+
+    def test_tui_execute_dispatch_uses_dispatch_runtime(self) -> None:
+        from tools.control_plane import tui
+
+        workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-ui-dispatch-workspace-"))
+        try:
+            init_git_workspace(workspace_dir)
+            with patch.dict(os.environ, {"AEGIS_WORKSPACE_ROOT": str(workspace_dir)}, clear=False):
+                cli.ensure_workspace_layout()
+                workflow = f"ui-dispatch-{uuid.uuid4().hex[:8]}"
+                cli.initialize_workflow(workflow)
+                with patch("tools.automation_runner.cli.choose_runtime_for_state", return_value=SimpleNamespace(runtime="codex", rationale="dispatch runtime")) as choose_runtime:
+                    with patch("tools.automation_runner.cli.pick_adapter", return_value=object()) as pick_adapter:
+                        with patch("tools.automation_runner.cli.AutomationRunner") as runner_cls:
+                            runner = runner_cls.return_value
+                            runner.dispatch_workers.return_value = {"workflow_id": workflow, "status": "workers_completed"}
+                            result = tui.execute_dispatch(workflow, dry_run=True)
+            choose_runtime.assert_called_once()
+            pick_adapter.assert_called_once_with("codex")
+            runner.dispatch_workers.assert_called_once()
+            self.assertEqual(result["workflow_id"], workflow)
+        finally:
+            shutil.rmtree(workspace_dir, ignore_errors=True)
+
+    def test_tui_summarizes_repetitive_agent_stderr_noise(self) -> None:
+        from tools.control_plane import tui
+
+        state = tui.AppState()
+        state.timeline_lines = []
+
+        tui._handle_stream_event(
+            state,
+            {
+                "kind": "agent_output",
+                "agent": "market-research",
+                "source": "stderr",
+                "text": "web search: site:threejs.org solar system example",
+            },
+        )
+        tui._handle_stream_event(
+            state,
+            {
+                "kind": "agent_output",
+                "agent": "market-research",
+                "source": "stderr",
+                "text": "web search: site:nasa.gov solar system demo",
+            },
+        )
+
+        self.assertEqual(state.timeline_lines, ["agent> market-research searching web sources"])
+
+    def test_tui_summarizes_shell_trace_noise_and_keeps_real_stderr(self) -> None:
+        from tools.control_plane import tui
+
+        state = tui.AppState()
+        state.timeline_lines = []
+
+        tui._handle_stream_event(
+            state,
+            {
+                "kind": "agent_output",
+                "agent": "frontend-squad",
+                "source": "stderr",
+                "text": "exec",
+            },
+        )
+        tui._handle_stream_event(
+            state,
+            {
+                "kind": "agent_output",
+                "agent": "frontend-squad",
+                "source": "stderr",
+                "text": "/bin/zsh -lc \"rg --files\"",
+            },
+        )
+        tui._handle_stream_event(
+            state,
+            {
+                "kind": "agent_output",
+                "agent": "frontend-squad",
+                "source": "stderr",
+                "text": "succeeded in 0ms:",
+            },
+        )
+        tui._handle_stream_event(
+            state,
+            {
+                "kind": "agent_output",
+                "agent": "frontend-squad",
+                "source": "stderr",
+                "text": "I have enough evidence to write the artifact.",
+            },
+        )
+
+        self.assertEqual(
+            state.timeline_lines,
+            [
+                "agent> frontend-squad running tool commands",
+                "agent> frontend-squad scanning workspace and executing checks",
+                "stderr> frontend-squad stderr: I have enough evidence to write the artifact.",
+            ],
+        )
 
 
 class ControlPlaneTeamPackTests(unittest.TestCase):
@@ -1087,6 +1423,33 @@ class ControlPlaneTeamPackTests(unittest.TestCase):
         team_dir = self.team_home / "teams" / "global" / "AEGIS-video-cli"
         self.assertTrue((team_dir / "runs" / f"{run_id}.json").exists())
         self.assertTrue((team_dir / "runs" / f"{run_id}.summary.md").exists())
+
+
+class ControlPlaneBridgeCommandTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.workspace_dir = Path(tempfile.mkdtemp(prefix="aegis-bridge-cli-workspace-"))
+        init_git_workspace(self.workspace_dir)
+        self.env_patch = patch.dict(os.environ, {"AEGIS_WORKSPACE_ROOT": str(self.workspace_dir)})
+        self.env_patch.start()
+
+    def tearDown(self) -> None:
+        self.env_patch.stop()
+        shutil.rmtree(self.workspace_dir, ignore_errors=True)
+
+    def test_bridge_up_surfaces_clean_error(self) -> None:
+        from tools.runtime_bridge import cli as runtime_bridge
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch(
+            "tools.runtime_bridge.cli.ensure_bridge_session",
+            side_effect=runtime_bridge.RuntimeBridgeError("tmux missing"),
+        ):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = cli.main(["bridge-up"])
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("tmux missing", stderr.getvalue())
 
 if __name__ == "__main__":
     unittest.main()

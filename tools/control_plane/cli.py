@@ -156,29 +156,27 @@ def validate_workspace_root(explicit_workspace: str | Path | None = None) -> Pat
         raise ControlPlaneError(
             f"workspace root must be a git repository root: {target_workspace} is not inside a git repository"
         )
-    if git_root != target_workspace:
-        raise ControlPlaneError(
-            f"workspace root must equal the git repository root: expected {git_root}, got {target_workspace}"
-        )
-    return target_workspace
+    return git_root
 
 
 def load_workflow_index() -> dict[str, Any]:
     default_payload = {"version": "1.0.0", "workflows": {}}
+    path = workflow_index_path()
     try:
-        payload = load_optional_json(WORKFLOW_INDEX_PATH, default_payload)
+        payload = load_optional_json(path, default_payload)
     except (OSError, json.JSONDecodeError):
-        write_json(WORKFLOW_INDEX_PATH, default_payload)
+        write_json(path, default_payload)
         return deepcopy(default_payload)
     if not isinstance(payload, dict) or not isinstance(payload.get("workflows", {}), dict):
-        write_json(WORKFLOW_INDEX_PATH, default_payload)
+        write_json(path, default_payload)
         return deepcopy(default_payload)
     return payload
 
 
 def save_workflow_index(payload: dict[str, Any]) -> None:
-    WORKFLOW_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    write_json(WORKFLOW_INDEX_PATH, payload)
+    path = workflow_index_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(path, payload)
 
 
 def update_workflow_index(
@@ -212,33 +210,14 @@ def workspace_from_workflow_index(workflow: str) -> Path | None:
     return Path(workspace_value).expanduser().resolve()
 
 
-def workspace_aegis_dir(explicit: str | Path | None = None) -> Path:
-    return workspace_root(explicit) / ".aegis"
-
-
-def workspace_runs_dir(explicit: str | Path | None = None) -> Path:
-    return workspace_aegis_dir(explicit) / "runs"
-
-
-def workflow_root(workflow: str, explicit_workspace: str | Path | None = None) -> Path:
-    return workspace_runs_dir(explicit_workspace) / workflow
-
-
-def project_manifest_path(explicit_workspace: str | Path | None = None) -> Path:
-    return workspace_aegis_dir(explicit_workspace) / "project.yml"
-
-
-def agent_overrides_path(explicit_workspace: str | Path | None = None) -> Path:
-    return workspace_aegis_dir(explicit_workspace) / "overrides" / "agent-overrides.json"
-
-
-def workflow_policy_path(explicit_workspace: str | Path | None = None) -> Path:
-    return workspace_aegis_dir(explicit_workspace) / "policies" / "workflow-policy.json"
-
-
 def display_path(path: Path) -> str:
     resolved = path.resolve()
-    for base in (workspace_root(), ROOT):
+    bases: list[Path] = []
+    resolved_workspace = optional_workspace_root()
+    if resolved_workspace is not None:
+        bases.append(resolved_workspace)
+    bases.append(ROOT)
+    for base in bases:
         try:
             return resolved.relative_to(base.resolve()).as_posix()
         except ValueError:
@@ -246,18 +225,18 @@ def display_path(path: Path) -> str:
     return str(resolved)
 
 
-def render_template(value: str, workflow: str) -> Path:
-    return workspace_root() / value.replace("{workflow}", workflow)
+def render_template(value: str, workflow: str, explicit_workspace: str | Path | None = None) -> Path:
+    return resolve_workspace(explicit_workspace, workflow=workflow) / value.replace("{workflow}", workflow)
 
 
 def default_project_manifest(explicit_workspace: str | Path | None = None) -> dict[str, Any]:
-    target_workspace = workspace_root(explicit_workspace)
+    target_workspace = validate_workspace_root(explicit_workspace)
     return {
         "version": "1.0.0",
         "project_id": target_workspace.name,
         "project_type": "application",
         "project_root": str(target_workspace),
-        "core_root": str(ROOT),
+        "core_root": str(workspace_core_dir(target_workspace)),
         "artifact_root": ".aegis/runs",
         "enabled_workflows": ["research", "planning", "build", "launch"],
         "review_policy": {
@@ -282,8 +261,12 @@ def default_project_manifest(explicit_workspace: str | Path | None = None) -> di
 
 
 def validate_project_manifest(payload: dict[str, Any], explicit_workspace: str | Path | None = None) -> None:
-    validate_required_keys(payload, PROJECT_MANIFEST_SCHEMA_PATH, display_path(project_manifest_path(explicit_workspace)))
-    target_workspace = workspace_root(explicit_workspace)
+    validate_required_keys(
+        payload,
+        runtime_project_manifest_schema_path(explicit_workspace),
+        display_path(project_manifest_path(explicit_workspace)),
+    )
+    target_workspace = validate_workspace_root(explicit_workspace)
     if Path(payload["project_root"]).resolve() != target_workspace:
         raise ControlPlaneError("project manifest project_root does not match resolved workspace_root")
     if payload["artifact_root"] != ".aegis/runs":
@@ -314,6 +297,52 @@ def validate_project_manifest(payload: dict[str, Any], explicit_workspace: str |
             raise ControlPlaneError(f"project manifest {object_field} must be an object when provided")
 
 
+def copy_file_if_changed(source: Path, target: Path) -> bool:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source_bytes = source.read_bytes()
+    if target.exists() and target.read_bytes() == source_bytes:
+        return False
+    target.write_bytes(source_bytes)
+    shutil.copystat(source, target, follow_symlinks=True)
+    return True
+
+
+def iter_runtime_sync_files() -> list[tuple[Path, Path]]:
+    source_root = core_install_root()
+    mappings: list[tuple[Path, Path]] = [
+        (source_root / ".aegis/core/registry.json", Path("core/registry.json")),
+        (source_root / ".aegis/core/registry.schema.json", Path("core/registry.schema.json")),
+        (source_root / ".aegis/core/orchestrator.yml", Path("core/orchestrator.yml")),
+        (source_root / ".aegis/hooks/pre-agent-run.sh", Path("hooks/pre-agent-run.sh")),
+        (source_root / ".aegis/hooks/post-agent-run.sh", Path("hooks/post-agent-run.sh")),
+        (source_root / ".aegis/schedules/nightly-evolution.sh", Path("schedules/nightly-evolution.sh")),
+    ]
+    for source in sorted((source_root / "shared-contexts").rglob("*")):
+        if source.is_file():
+            mappings.append((source, Path("shared-contexts") / source.relative_to(source_root / "shared-contexts")))
+    for source in sorted((source_root / "agents").rglob("*")):
+        if source.is_file():
+            mappings.append((source, Path("agents") / source.relative_to(source_root / "agents")))
+    return mappings
+
+
+def default_workspace_evolution_log() -> dict[str, Any]:
+    return {"version": "1.0.0", "entries": []}
+
+
+def sync_workspace_runtime_assets(explicit_workspace: str | Path | None = None) -> list[str]:
+    target_workspace = validate_workspace_root(explicit_workspace)
+    aegis_dir = workspace_aegis_dir(target_workspace)
+    messages: list[str] = []
+    for source, relative_target in iter_runtime_sync_files():
+        target = aegis_dir / relative_target
+        if copy_file_if_changed(source, target):
+            messages.append(f"synced runtime asset: {display_path(target)}")
+            if target.suffix == ".sh":
+                target.chmod(0o755)
+    return messages
+
+
 def ensure_workspace_layout(explicit_workspace: str | Path | None = None) -> list[str]:
     target_workspace = validate_workspace_root(explicit_workspace)
     aegis_dir = workspace_aegis_dir(target_workspace)
@@ -324,10 +353,17 @@ def ensure_workspace_layout(explicit_workspace: str | Path | None = None) -> lis
         aegis_dir / "cache",
         aegis_dir / "cache" / "session-teams",
         aegis_dir / "teams",
+        aegis_dir / "memory",
+        aegis_dir / "core",
+        aegis_dir / "agents",
+        aegis_dir / "shared-contexts",
+        aegis_dir / "hooks",
+        aegis_dir / "schedules",
         aegis_dir / "overrides",
         aegis_dir / "policies",
     ]:
         path.mkdir(parents=True, exist_ok=True)
+    messages.extend(sync_workspace_runtime_assets(target_workspace))
     manifest = project_manifest_path(target_workspace)
     if manifest.exists():
         payload = load_json(manifest)
@@ -356,7 +392,11 @@ def resolve_workspace(explicit_workspace: str | Path | None = None, workflow: st
         if indexed_workspace:
             return validate_workspace_root(indexed_workspace)
         discovered_workspace = validate_workspace_root()
-        if state_path(workflow, discovered_workspace).exists():
+        discovered_manifest = discovered_workspace / ".aegis" / "project.yml"
+        if discovered_manifest.exists():
+            return discovered_workspace
+        discovered_state = discovered_workspace / ".aegis" / "runs" / workflow / "state.json"
+        if discovered_state.exists():
             return discovered_workspace
         raise ControlPlaneError(
             f"unable to resolve workspace for workflow {workflow}: provide --workspace, "
@@ -370,6 +410,256 @@ def team_home_root() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     return Path.home() / ".aegis"
+
+
+def control_plane_state_root() -> Path:
+    return team_home_root() / "control-plane"
+
+
+def workflow_index_path() -> Path:
+    return control_plane_state_root() / "workflow-index.json"
+
+
+def evolution_log_path() -> Path:
+    return control_plane_state_root() / "evolution.log"
+
+
+def core_install_root() -> Path:
+    override = os.environ.get("AEGIS_CORE_ROOT")
+    if override:
+        return Path(override).expanduser().resolve()
+    return ROOT
+
+
+def workspace_aegis_dir(
+    explicit: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    if explicit is not None or workflow is not None or os.environ.get("AEGIS_WORKSPACE_ROOT"):
+        return resolve_workspace(explicit, workflow=workflow) / ".aegis"
+    return workspace_root(explicit) / ".aegis"
+
+
+def workspace_runs_dir(explicit: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit, workflow=workflow) / "runs"
+
+
+def workflow_root(workflow: str, explicit_workspace: str | Path | None = None) -> Path:
+    return workspace_runs_dir(explicit_workspace, workflow=workflow) / workflow
+
+
+def project_manifest_path(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "project.yml"
+
+
+def agent_overrides_path(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "overrides" / "agent-overrides.json"
+
+
+def workflow_policy_path(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "policies" / "workflow-policy.json"
+
+
+def workspace_core_dir(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "core"
+
+
+def workspace_shared_contexts_dir(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "shared-contexts"
+
+
+def workspace_agents_dir(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "agents"
+
+
+def workspace_hooks_dir(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "hooks"
+
+
+def workspace_schedules_dir(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return workspace_aegis_dir(explicit_workspace, workflow=workflow) / "schedules"
+
+
+def optional_workspace_root(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path | None:
+    try:
+        return resolve_workspace(explicit_workspace, workflow=workflow)
+    except ControlPlaneError:
+        return None
+
+
+def runtime_or_source_path(
+    *,
+    relative_workspace_path: Path,
+    source_path: Path,
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    resolved_workspace = optional_workspace_root(explicit_workspace, workflow=workflow)
+    if resolved_workspace is not None:
+        candidate = resolved_workspace / relative_workspace_path
+        if candidate.exists():
+            return candidate
+    return source_path
+
+
+def runtime_registry_path(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return runtime_or_source_path(
+        relative_workspace_path=Path(".aegis/core/registry.json"),
+        source_path=core_install_root() / ".aegis/core/registry.json",
+        explicit_workspace=explicit_workspace,
+        workflow=workflow,
+    )
+
+
+def runtime_registry_schema_path(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return runtime_or_source_path(
+        relative_workspace_path=Path(".aegis/core/registry.schema.json"),
+        source_path=core_install_root() / ".aegis/core/registry.schema.json",
+        explicit_workspace=explicit_workspace,
+        workflow=workflow,
+    )
+
+
+def runtime_orchestrator_path(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return runtime_or_source_path(
+        relative_workspace_path=Path(".aegis/core/orchestrator.yml"),
+        source_path=core_install_root() / ".aegis/core/orchestrator.yml",
+        explicit_workspace=explicit_workspace,
+        workflow=workflow,
+    )
+
+
+def runtime_shared_context_path(
+    filename: str,
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_or_source_path(
+        relative_workspace_path=Path(".aegis/shared-contexts") / filename,
+        source_path=core_install_root() / "shared-contexts" / filename,
+        explicit_workspace=explicit_workspace,
+        workflow=workflow,
+    )
+
+
+def runtime_contracts_path(explicit_workspace: str | Path | None = None, workflow: str | None = None) -> Path:
+    return runtime_shared_context_path("tool-contracts.yml", explicit_workspace, workflow)
+
+
+def runtime_host_capability_map_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("host-capability-map.yml", explicit_workspace, workflow)
+
+
+def runtime_requirements_lock_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("requirements-lock-schema.json", explicit_workspace, workflow)
+
+
+def runtime_requirements_traceability_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("requirements-traceability-schema.json", explicit_workspace, workflow)
+
+
+def runtime_review_loop_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("review-loop-status-schema.json", explicit_workspace, workflow)
+
+
+def runtime_task_breakdown_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("task-breakdown-schema.json", explicit_workspace, workflow)
+
+
+def runtime_implementation_contracts_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("implementation-contracts-schema.json", explicit_workspace, workflow)
+
+
+def runtime_reuse_audit_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("reuse-audit-schema.json", explicit_workspace, workflow)
+
+
+def runtime_project_manifest_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("project-manifest-schema.json", explicit_workspace, workflow)
+
+
+def runtime_agent_overrides_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("agent-overrides-schema.json", explicit_workspace, workflow)
+
+
+def runtime_workspace_policy_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("workspace-policy-schema.json", explicit_workspace, workflow)
+
+
+def runtime_team_pack_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("team-pack-schema.json", explicit_workspace, workflow)
+
+
+def runtime_team_run_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("team-run-schema.json", explicit_workspace, workflow)
+
+
+def runtime_team_run_brief_schema_path(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_shared_context_path("team-run-brief-schema.json", explicit_workspace, workflow)
+
+
+def runtime_agent_dir(
+    agent_id: str,
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_or_source_path(
+        relative_workspace_path=Path(".aegis/agents") / agent_id,
+        source_path=core_install_root() / "agents" / agent_id,
+        explicit_workspace=explicit_workspace,
+        workflow=workflow,
+    )
+
+
+def runtime_agent_file_path(
+    agent_id: str,
+    filename: str,
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> Path:
+    return runtime_agent_dir(agent_id, explicit_workspace, workflow) / filename
 
 
 def team_pack_store_root(scope: str, explicit_workspace: str | Path | None = None) -> Path:
@@ -913,14 +1203,14 @@ aegis ctl complete-team-run --team {payload['team_id']} --scope {scope} --run-id
 
 
 def validate_team_pack_manifest(payload: dict[str, Any], label: str) -> None:
-    validate_required_keys(payload, TEAM_PACK_SCHEMA_PATH, label)
+    validate_required_keys(payload, runtime_team_pack_schema_path(), label)
     validate_team_id(payload["team_id"])
     scope = normalize_team_scope(payload["lifecycle_scope"])
     if scope == "all":
         raise ControlPlaneError(f"{label} lifecycle_scope cannot be `all`")
     if not isinstance(payload["roles"], list) or not payload["roles"]:
         raise ControlPlaneError(f"{label} roles must be a non-empty list")
-    schema = load_json(TEAM_PACK_SCHEMA_PATH)
+    schema = load_json(runtime_team_pack_schema_path())
     role_required = schema["role_required"]
     for role in payload["roles"]:
         missing = [key for key in role_required if key not in role]
@@ -1446,7 +1736,7 @@ def compose_team_pack_from_request(
 
 
 def validate_team_run_record(payload: dict[str, Any], label: str) -> None:
-    validate_required_keys(payload, TEAM_RUN_SCHEMA_PATH, label)
+    validate_required_keys(payload, runtime_team_run_schema_path(), label)
     validate_team_id(payload["team_id"])
     if normalize_team_scope(payload["scope"]) == "all":
         raise ControlPlaneError(f"{label} scope cannot be `all`")
@@ -1465,7 +1755,7 @@ def validate_team_run_record(payload: dict[str, Any], label: str) -> None:
 
 
 def validate_team_run_brief(payload: dict[str, Any], label: str) -> None:
-    validate_required_keys(payload, TEAM_RUN_BRIEF_SCHEMA_PATH, label)
+    validate_required_keys(payload, runtime_team_run_brief_schema_path(), label)
     validate_team_id(payload["team_id"])
     if normalize_team_scope(payload["scope"]) == "all":
         raise ControlPlaneError(f"{label} scope cannot be `all`")
@@ -2787,17 +3077,27 @@ def validate_agent_override_map(agent_map: dict[str, Any], registry: dict[str, A
                 raise ControlPlaneError(f"{label} override {agent_id}.{key} must be a list of strings")
 
 
-def load_project_agent_overrides(registry: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    manifest = load_json(project_manifest_path())
+def load_project_agent_overrides(
+    registry: dict[str, Any],
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    manifest_path = project_manifest_path(explicit_workspace, workflow)
+    overrides_path = agent_overrides_path(explicit_workspace, workflow)
+    manifest = load_json(manifest_path)
     manifest_overrides = manifest.get("agent_overrides", {})
     validate_agent_override_map(manifest_overrides, registry, "project manifest agent_overrides")
 
-    payload = load_optional_json(agent_overrides_path(), {"version": "1.0.0", "agents": {}})
-    validate_required_keys(payload, AGENT_OVERRIDES_SCHEMA_PATH, display_path(agent_overrides_path()))
+    payload = load_optional_json(overrides_path, {"version": "1.0.0", "agents": {}})
+    validate_required_keys(
+        payload,
+        runtime_agent_overrides_schema_path(explicit_workspace, workflow),
+        display_path(overrides_path),
+    )
     file_overrides = payload.get("agents", {})
     if not isinstance(file_overrides, dict):
         raise ControlPlaneError("agent-overrides.json agents must be an object")
-    validate_agent_override_map(file_overrides, registry, display_path(agent_overrides_path()))
+    validate_agent_override_map(file_overrides, registry, display_path(overrides_path))
 
     merged: dict[str, dict[str, Any]] = {}
     for source in [manifest_overrides, file_overrides]:
@@ -2814,7 +3114,7 @@ def load_project_agent_overrides(registry: dict[str, Any]) -> dict[str, dict[str
 
 
 def validate_workspace_policy_payload(payload: dict[str, Any], orchestrator: dict[str, Any], label: str) -> None:
-    validate_required_keys(payload, WORKSPACE_POLICY_SCHEMA_PATH, label)
+    validate_required_keys(payload, runtime_workspace_policy_schema_path(), label)
     gate_overrides = payload.get("gate_overrides", {})
     if gate_overrides and not isinstance(gate_overrides, dict):
         raise ControlPlaneError(f"{label} gate_overrides must be an object")
@@ -2849,7 +3149,12 @@ def validate_workspace_policy_payload(payload: dict[str, Any], orchestrator: dic
             raise ControlPlaneError(f"{label} gate {gate_state}.required_outputs_add must be a list of strings")
 
 
-def build_effective_workspace_policy(manifest: dict[str, Any], orchestrator: dict[str, Any]) -> dict[str, Any]:
+def build_effective_workspace_policy(
+    manifest: dict[str, Any],
+    orchestrator: dict[str, Any],
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> dict[str, Any]:
     max_rounds = manifest.get("review_policy", {}).get("max_rounds")
     gate_overrides: dict[str, dict[str, Any]] = {}
     if max_rounds is not None:
@@ -2860,8 +3165,9 @@ def build_effective_workspace_policy(manifest: dict[str, Any], orchestrator: dic
             effective_rounds = min(max_rounds, review_loop["max_rounds"])
             gate_overrides[gate_state] = {"max_rounds": effective_rounds}
 
-    payload = load_optional_json(workflow_policy_path(), {"version": "1.0.0", "gate_overrides": {}})
-    validate_workspace_policy_payload(payload, orchestrator, display_path(workflow_policy_path()))
+    policy_path = workflow_policy_path(explicit_workspace, workflow)
+    payload = load_optional_json(policy_path, {"version": "1.0.0", "gate_overrides": {}})
+    validate_workspace_policy_payload(payload, orchestrator, display_path(policy_path))
     for gate_state, override in payload.get("gate_overrides", {}).items():
         merged = gate_overrides.setdefault(gate_state, {})
         merged.update(override)
@@ -2908,8 +3214,15 @@ def apply_workspace_policy(orchestrator: dict[str, Any], policy: dict[str, Any])
     return payload
 
 
-def get_context() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    return load_json(REGISTRY_PATH), load_json(ORCHESTRATOR_PATH), load_json(CONTRACTS_PATH)
+def get_context(
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    return (
+        load_json(runtime_registry_path(explicit_workspace, workflow)),
+        load_json(runtime_orchestrator_path(explicit_workspace, workflow)),
+        load_json(runtime_contracts_path(explicit_workspace, workflow)),
+    )
 
 
 def project_lock_path(workflow: str) -> Path:
@@ -2925,56 +3238,68 @@ def orchestrator_lock_path(workflow: str) -> Path:
 
 
 def build_project_lock(workflow: str, workflow_type: str | None = None) -> dict[str, Any]:
-    payload = deepcopy(load_json(project_manifest_path()))
-    validate_project_manifest(payload)
+    workspace = resolve_workspace(workflow=workflow)
+    manifest_path = project_manifest_path(workflow=workflow)
+    overrides_path = agent_overrides_path(workflow=workflow)
+    policy_path = workflow_policy_path(workflow=workflow)
+    payload = deepcopy(load_json(manifest_path))
+    validate_project_manifest(payload, workspace)
     payload["_workspace_sources"] = {
-        "project_manifest": display_path(project_manifest_path()),
-        "agent_overrides": display_path(agent_overrides_path()) if agent_overrides_path().exists() else None,
-        "workflow_policy": display_path(workflow_policy_path()) if workflow_policy_path().exists() else None,
+        "project_manifest": display_path(manifest_path),
+        "agent_overrides": display_path(overrides_path) if overrides_path.exists() else None,
+        "workflow_policy": display_path(policy_path) if policy_path.exists() else None,
     }
     payload["_runtime"] = {
         "layer": "runtime_snapshot",
         "workflow_id": workflow,
         "workflow_type": workflow_type,
         "locked_at": utc_now(),
-        "workspace_root": str(workspace_root()),
-        "source_project_manifest": display_path(project_manifest_path()),
+        "workspace_root": str(workspace),
+        "source_project_manifest": display_path(manifest_path),
     }
     return payload
 
 
 def build_registry_lock(workflow: str, workflow_type: str | None = None) -> dict[str, Any]:
-    base_registry = load_json(REGISTRY_PATH)
-    agent_overrides = load_project_agent_overrides(base_registry)
+    workspace = resolve_workspace(workflow=workflow)
+    source_registry_path = runtime_registry_path(workflow=workflow)
+    base_registry = load_json(source_registry_path)
+    agent_overrides = load_project_agent_overrides(base_registry, workflow=workflow)
+    manifest_path = project_manifest_path(workflow=workflow)
+    overrides_path = agent_overrides_path(workflow=workflow)
     payload = apply_agent_overrides(base_registry, agent_overrides)
     payload["_runtime"] = {
         "layer": "runtime_snapshot",
         "workflow_id": workflow,
         "workflow_type": workflow_type,
         "locked_at": utc_now(),
-        "workspace_root": str(workspace_root()),
-        "source_registry": display_path(REGISTRY_PATH),
-        "source_project_manifest": display_path(project_manifest_path()),
-        "source_agent_overrides": display_path(agent_overrides_path()) if agent_overrides_path().exists() else None,
+        "workspace_root": str(workspace),
+        "source_registry": display_path(source_registry_path),
+        "source_project_manifest": display_path(manifest_path),
+        "source_agent_overrides": display_path(overrides_path) if overrides_path.exists() else None,
     }
     return payload
 
 
 def build_orchestrator_lock(workflow: str, workflow_type: str | None = None) -> dict[str, Any]:
-    manifest = load_json(project_manifest_path())
-    validate_project_manifest(manifest)
-    base_orchestrator = load_json(ORCHESTRATOR_PATH)
-    effective_policy = build_effective_workspace_policy(manifest, base_orchestrator)
+    workspace = resolve_workspace(workflow=workflow)
+    manifest_path = project_manifest_path(workflow=workflow)
+    policy_path = workflow_policy_path(workflow=workflow)
+    manifest = load_json(manifest_path)
+    validate_project_manifest(manifest, workspace)
+    source_orchestrator_path = runtime_orchestrator_path(workflow=workflow)
+    base_orchestrator = load_json(source_orchestrator_path)
+    effective_policy = build_effective_workspace_policy(manifest, base_orchestrator, workflow=workflow)
     payload = apply_workspace_policy(base_orchestrator, effective_policy)
     payload["_runtime"] = {
         "layer": "runtime_snapshot",
         "workflow_id": workflow,
         "workflow_type": workflow_type,
         "locked_at": utc_now(),
-        "workspace_root": str(workspace_root()),
-        "source_orchestrator": display_path(ORCHESTRATOR_PATH),
-        "source_project_manifest": display_path(project_manifest_path()),
-        "source_workflow_policy": display_path(workflow_policy_path()) if workflow_policy_path().exists() else None,
+        "workspace_root": str(workspace),
+        "source_orchestrator": display_path(source_orchestrator_path),
+        "source_project_manifest": display_path(manifest_path),
+        "source_workflow_policy": display_path(policy_path) if policy_path.exists() else None,
         "effective_workspace_policy": effective_policy,
     }
     return payload
@@ -2982,7 +3307,7 @@ def build_orchestrator_lock(workflow: str, workflow_type: str | None = None) -> 
 
 def ensure_runtime_snapshot(workflow: str, workflow_type: str | None = None, refresh: bool = False) -> list[str]:
     validate_workflow_id(workflow)
-    ensure_workspace_layout()
+    ensure_workspace_layout(resolve_workspace(workflow=workflow))
     target_root = workflow_root(workflow)
     target_root.mkdir(parents=True, exist_ok=True)
     messages: list[str] = []
@@ -3007,14 +3332,14 @@ def get_runtime_context(workflow: str) -> tuple[dict[str, Any], dict[str, Any], 
     workflow_state = load_state(workflow) if state_path(workflow).exists() else None
     ensure_runtime_snapshot(workflow, workflow_state.get("workflow_type") if workflow_state else None)
     project_lock = load_json(project_lock_path(workflow))
-    validate_project_manifest(project_lock)
+    validate_project_manifest(project_lock, resolve_workspace(workflow=workflow))
     registry = load_json(registry_lock_path(workflow))
     orchestrator = load_json(orchestrator_lock_path(workflow))
-    contracts = load_json(CONTRACTS_PATH)
+    contracts = load_json(runtime_contracts_path(workflow=workflow))
     runtime_errors: list[str] = []
-    runtime_errors.extend(validate_registry_schema(registry))
+    runtime_errors.extend(validate_registry_schema(registry, workflow=workflow))
     runtime_errors.extend(validate_orchestrator(registry, orchestrator))
-    runtime_errors.extend(validate_contracts(registry, contracts))
+    runtime_errors.extend(validate_contracts(registry, contracts, workflow=workflow))
     if runtime_errors:
         raise ControlPlaneError("\n".join(runtime_errors))
     enabled_workflows = project_lock.get("enabled_workflows", [])
@@ -3030,8 +3355,12 @@ def registry_by_id(registry: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {agent["id"]: agent for agent in registry["agents"]}
 
 
-def validate_registry_schema(registry: dict[str, Any]) -> list[str]:
-    schema = load_json(REGISTRY_SCHEMA_PATH)
+def validate_registry_schema(
+    registry: dict[str, Any],
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> list[str]:
+    schema = load_json(runtime_registry_schema_path(explicit_workspace, workflow))
     errors: list[str] = []
     for key in schema["required"]:
         if key not in registry:
@@ -3125,7 +3454,12 @@ def validate_orchestrator(registry: dict[str, Any], orchestrator: dict[str, Any]
     return errors
 
 
-def validate_contracts(registry: dict[str, Any], contracts: dict[str, Any]) -> list[str]:
+def validate_contracts(
+    registry: dict[str, Any],
+    contracts: dict[str, Any],
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> list[str]:
     errors: list[str] = []
     known = contracts.get("abstract_actions", {})
     for agent in registry["agents"]:
@@ -3135,7 +3469,11 @@ def validate_contracts(registry: dict[str, Any], contracts: dict[str, Any]) -> l
         for dependency in agent.get("dependencies", []):
             if dependency.startswith("contract:") and dependency.split(":", 1)[1] not in known:
                 errors.append(f"agent {agent['id']} depends on missing contract: {dependency}")
-    for skill_path in ROOT.glob("agents/*/SKILL.md"):
+    for agent in registry["agents"]:
+        skill_path = runtime_agent_file_path(agent["id"], "SKILL.md", explicit_workspace, workflow)
+        if not skill_path.exists():
+            errors.append(f"missing skill file for agent {agent['id']}: {display_path(skill_path)}")
+            continue
         content = skill_path.read_text(encoding="utf-8")
         for token in FORBIDDEN_TOKENS:
             if token in content:
@@ -3202,7 +3540,11 @@ def enforce_requirements_lock(state: dict[str, Any], workflow: str, state_name: 
     if not lock_path.exists():
         raise ControlPlaneError(f"missing locked requirements artifact: {display_path(lock_path)}")
     payload = load_json(lock_path)
-    validate_required_keys(payload, REQUIREMENTS_LOCK_SCHEMA_PATH, display_path(lock_path))
+    validate_required_keys(
+        payload,
+        runtime_requirements_lock_schema_path(workflow=workflow),
+        display_path(lock_path),
+    )
     computed_hash = compute_requirements_lock_hash(payload)
     state_hash = state.get("requirements_lock_hash")
     if not state_hash:
@@ -3215,7 +3557,7 @@ def enforce_requirements_lock(state: dict[str, Any], workflow: str, state_name: 
 
 def validate_review_loop_status(path: Path, workflow: str, gate_state: str, gate: dict[str, Any]) -> dict[str, Any]:
     payload = load_json(path)
-    validate_required_keys(payload, REVIEW_LOOP_SCHEMA_PATH, display_path(path))
+    validate_required_keys(payload, runtime_review_loop_schema_path(workflow=workflow), display_path(path))
     review_loop = gate["review_loop"]
     if payload["workflow_id"] != workflow:
         raise ControlPlaneError(f"{display_path(path)} workflow_id mismatch")
@@ -3257,10 +3599,14 @@ def validate_fix_response_artifact(path: Path) -> None:
         raise ControlPlaneError(f"empty fix response artifact: {display_path(path)}")
 
 
-def validate_skill_contract_mentions(registry: dict[str, Any]) -> list[str]:
+def validate_skill_contract_mentions(
+    registry: dict[str, Any],
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> list[str]:
     errors: list[str] = []
     for agent in registry["agents"]:
-        skill_path = ROOT / agent["entrypoint"]
+        skill_path = runtime_agent_file_path(agent["id"], "SKILL.md", explicit_workspace, workflow)
         if not skill_path.exists():
             errors.append(f"missing skill file for agent {agent['id']}: {display_path(skill_path)}")
             continue
@@ -3271,9 +3617,13 @@ def validate_skill_contract_mentions(registry: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_host_capability_map(contracts: dict[str, Any]) -> list[str]:
+def validate_host_capability_map(
+    contracts: dict[str, Any],
+    explicit_workspace: str | Path | None = None,
+    workflow: str | None = None,
+) -> list[str]:
     errors: list[str] = []
-    capability_map = load_json(HOST_CAPABILITY_MAP_PATH)
+    capability_map = load_json(runtime_host_capability_map_path(explicit_workspace, workflow))
     required_runtimes = {"codex", "claude"}
     runtimes = capability_map.get("runtimes", {})
     for runtime_name in required_runtimes:
@@ -3313,7 +3663,11 @@ def overlaps_scope(left: str, right: str) -> bool:
 
 
 def validate_task_breakdown(payload: dict[str, Any], workflow: str, registry: dict[str, Any], orchestrator: dict[str, Any]) -> None:
-    validate_required_keys(payload, TASK_BREAKDOWN_SCHEMA_PATH, display_path(task_breakdown_path(workflow)))
+    validate_required_keys(
+        payload,
+        runtime_task_breakdown_schema_path(workflow=workflow),
+        display_path(task_breakdown_path(workflow)),
+    )
     if payload["workflow_id"] != workflow:
         raise ControlPlaneError("task_breakdown workflow_id mismatch")
     tasks = payload.get("tasks")
@@ -3332,7 +3686,7 @@ def validate_task_breakdown(payload: dict[str, Any], workflow: str, registry: di
     seen_ids: set[str] = set()
     parallel_groups: dict[str, list[dict[str, Any]]] = {}
     for task in tasks:
-        required_keys = load_json(TASK_BREAKDOWN_SCHEMA_PATH)["task_required"]
+        required_keys = load_json(runtime_task_breakdown_schema_path(workflow=workflow))["task_required"]
         missing = [key for key in required_keys if key not in task]
         if missing:
             raise ControlPlaneError(f"task_breakdown task missing keys: {', '.join(missing)}")
@@ -3377,7 +3731,7 @@ def validate_implementation_contracts(
 ) -> None:
     validate_required_keys(
         payload,
-        IMPLEMENTATION_CONTRACTS_SCHEMA_PATH,
+        runtime_implementation_contracts_schema_path(workflow=workflow),
         display_path(implementation_contracts_path(workflow)),
     )
     if payload["workflow_id"] != workflow:
@@ -3407,7 +3761,11 @@ def validate_reuse_audit(
     requirements_hash: str,
     contracts: dict[str, Any],
 ) -> None:
-    validate_required_keys(payload, REUSE_AUDIT_SCHEMA_PATH, display_path(reuse_audit_path(workflow, agent_id)))
+    validate_required_keys(
+        payload,
+        runtime_reuse_audit_schema_path(workflow=workflow),
+        display_path(reuse_audit_path(workflow, agent_id)),
+    )
     if not requirements_hash:
         raise ControlPlaneError(f"workflow is missing requirements_lock_hash before validating reuse audit for {agent_id}")
     if payload["workflow_id"] != workflow:
@@ -3432,6 +3790,83 @@ def validate_reuse_audit(
             raise ControlPlaneError(f"reuse audit references unknown abstract action {item['action']} for {agent_id}")
 
 
+def normalize_reuse_audit_payload(
+    payload: dict[str, Any],
+    *,
+    workflow: str,
+    agent_id: str,
+    requirements_hash: str | None,
+) -> tuple[dict[str, Any], bool]:
+    normalized = deepcopy(payload)
+    changed = False
+
+    if "agent_id" not in normalized and isinstance(normalized.get("agent"), str):
+        normalized["agent_id"] = normalized["agent"]
+        changed = True
+    if "version" not in normalized:
+        normalized["version"] = "1.0.0"
+        changed = True
+    if normalized.get("workflow_id") != workflow:
+        normalized["workflow_id"] = workflow
+        changed = True
+    if normalized.get("agent_id") != agent_id:
+        normalized["agent_id"] = agent_id
+        changed = True
+    if "generated_at" not in normalized:
+        normalized["generated_at"] = utc_now()
+        changed = True
+    if requirements_hash and normalized.get("requirements_lock_hash") != requirements_hash:
+        normalized["requirements_lock_hash"] = requirements_hash
+        changed = True
+    if "completed_tasks" not in normalized:
+        task_id = normalized.get("task_id")
+        normalized["completed_tasks"] = [task_id] if isinstance(task_id, str) and task_id else []
+        changed = True
+    if "scanned_existing_assets" not in normalized:
+        scanned_assets = normalized.get("scanned_assets", [])
+        normalized["scanned_existing_assets"] = [
+            item.get("path") if isinstance(item, dict) and item.get("path") else item
+            for item in scanned_assets
+            if isinstance(item, (str, dict))
+        ]
+        changed = True
+    if "new_assets" not in normalized:
+        artifact_root = reuse_audit_path(workflow, agent_id).parent
+        if artifact_root.exists():
+            normalized["new_assets"] = sorted(
+                str(path.relative_to(artifact_root))
+                for path in artifact_root.rglob("*")
+                if path.is_file() and path.name != "reuse-audit.json"
+            )
+        else:
+            normalized["new_assets"] = []
+        changed = True
+    if "verification_commands" not in normalized:
+        normalized["verification_commands"] = []
+        changed = True
+    if isinstance(normalized.get("host_capabilities_used"), list):
+        remapped_capabilities: list[dict[str, Any]] = []
+        capability_changed = False
+        for item in normalized["host_capabilities_used"]:
+            if not isinstance(item, dict):
+                remapped_capabilities.append(item)
+                continue
+            remapped = dict(item)
+            if "action" not in remapped and isinstance(remapped.get("abstract_action"), str):
+                remapped["action"] = remapped["abstract_action"]
+                capability_changed = True
+            if "resolution" not in remapped:
+                resolution_bits = [str(remapped.get("runtime_binding") or "").strip(), str(remapped.get("evidence") or "").strip()]
+                resolution = "; ".join(bit for bit in resolution_bits if bit)
+                remapped["resolution"] = resolution or "documented local capability usage"
+                capability_changed = True
+            remapped_capabilities.append(remapped)
+        if capability_changed:
+            normalized["host_capabilities_used"] = remapped_capabilities
+            changed = True
+    return normalized, changed
+
+
 def expected_agent_payload(agent: dict[str, Any]) -> dict[str, Any]:
     return deepcopy(agent)
 
@@ -3440,7 +3875,7 @@ def sync_agent_metadata(check_only: bool = False) -> list[str]:
     registry, _, _ = get_context()
     messages: list[str] = []
     for agent in registry["agents"]:
-        target_path = ROOT / "agents" / agent["id"] / "agent.json"
+        target_path = runtime_agent_file_path(agent["id"], "agent.json")
         if not target_path.parent.exists():
             messages.append(f"missing agent directory for {agent['id']}")
             continue
@@ -3495,14 +3930,15 @@ def doctor() -> list[str]:
 
 
 def workspace_doctor() -> list[str]:
-    messages = ensure_workspace_layout()
-    payload = load_json(project_manifest_path())
-    validate_project_manifest(payload)
-    registry = load_json(REGISTRY_PATH)
-    orchestrator = load_json(ORCHESTRATOR_PATH)
-    load_project_agent_overrides(registry)
-    build_effective_workspace_policy(payload, orchestrator)
-    return messages + [f"workspace ready: {workspace_root()}"]
+    workspace = resolve_workspace()
+    messages = ensure_workspace_layout(workspace)
+    payload = load_json(project_manifest_path(workspace))
+    validate_project_manifest(payload, workspace)
+    registry = load_json(runtime_registry_path(workspace))
+    orchestrator = load_json(runtime_orchestrator_path(workspace))
+    load_project_agent_overrides(registry, explicit_workspace=workspace)
+    build_effective_workspace_policy(payload, orchestrator, explicit_workspace=workspace)
+    return messages + [f"workspace ready: {workspace}"]
 
 
 def run_doctor(workflow: str) -> list[str]:
@@ -3580,7 +4016,8 @@ def write_state_transition(workflow: str, target_state: str) -> list[str]:
 
 
 def initialize_workflow(workflow: str) -> dict[str, Any]:
-    ensure_workspace_layout()
+    workspace = resolve_workspace()
+    ensure_workspace_layout(workspace)
     workflow_root_path = workflow_root(workflow)
     for path in [
         workflow_root_path / "l1-intelligence",
@@ -3606,7 +4043,7 @@ def initialize_workflow(workflow: str) -> dict[str, Any]:
     }
     write_json(state_path(workflow), payload)
     ensure_runtime_snapshot(workflow)
-    update_workflow_index(workflow, workspace=workspace_root(), current_state="INIT")
+    update_workflow_index(workflow, workspace=workspace, current_state="INIT")
     return payload
 
 
@@ -3755,11 +4192,18 @@ def git(*args: str, cwd: Path | None = None, check: bool = True) -> subprocess.C
     return subprocess.run(["git", *args], cwd=str(cwd or ROOT), check=check, text=True, capture_output=True)
 
 
-def workspace_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return git(*args, cwd=workspace_root(), check=check)
+def workspace_git(*args: str, workflow: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+    cwd = resolve_workspace(workflow=workflow) if workflow else resolve_workspace()
+    return git(*args, cwd=cwd, check=check)
 
 
-def post_agent_run(agent_id: str, workflow: str) -> list[str]:
+def workflow_changes_are_gitignored(workflow: str) -> bool:
+    workflow_dir = workflow_root(workflow)
+    result = workspace_git("check-ignore", "-q", str(workflow_dir), workflow=workflow, check=False)
+    return result.returncode == 0
+
+
+def finalize_agent_run(agent_id: str, workflow: str) -> list[str]:
     _, registry, orchestrator, contracts = get_runtime_context(workflow)
     state = load_state(workflow)
     validate_outputs(agent_id, workflow, state["current_state"])
@@ -3777,7 +4221,11 @@ def post_agent_run(agent_id: str, workflow: str) -> list[str]:
         validate_implementation_contracts(implementation_payload, workflow, registry, breakdown_payload)
         lock_path = requirements_lock_path(workflow)
         payload = load_json(lock_path)
-        validate_required_keys(payload, REQUIREMENTS_LOCK_SCHEMA_PATH, display_path(lock_path))
+        validate_required_keys(
+            payload,
+            runtime_requirements_lock_schema_path(workflow=workflow),
+            display_path(lock_path),
+        )
         lock_hash = compute_requirements_lock_hash(payload)
         payload["lock_hash"] = lock_hash
         write_json(lock_path, payload)
@@ -3787,8 +4235,16 @@ def post_agent_run(agent_id: str, workflow: str) -> list[str]:
         audit_path = reuse_audit_path(workflow, agent_id)
         if not audit_path.exists():
             raise ControlPlaneError(f"missing development governance artifact: {display_path(audit_path)}")
-        validate_reuse_audit(
+        audit_payload, audit_changed = normalize_reuse_audit_payload(
             load_json(audit_path),
+            workflow=workflow,
+            agent_id=agent_id,
+            requirements_hash=state.get("requirements_lock_hash"),
+        )
+        if audit_changed:
+            write_json(audit_path, audit_payload)
+        validate_reuse_audit(
+            audit_payload,
             workflow,
             agent_id,
             state.get("requirements_lock_hash"),
@@ -3797,7 +4253,11 @@ def post_agent_run(agent_id: str, workflow: str) -> list[str]:
     elif state["current_state"] == "L4_VALIDATE":
         traceability_path = requirements_traceability_path(workflow)
         payload = load_json(traceability_path)
-        validate_required_keys(payload, REQUIREMENTS_TRACEABILITY_SCHEMA_PATH, display_path(traceability_path))
+        validate_required_keys(
+            payload,
+            runtime_requirements_traceability_schema_path(workflow=workflow),
+            display_path(traceability_path),
+        )
         if payload["requirements_lock_hash"] != state.get("requirements_lock_hash"):
             raise ControlPlaneError("requirements traceability hash does not match the locked workflow requirements")
     elif state["current_state"] in orchestrator["gates"]:
@@ -3846,16 +4306,35 @@ def post_agent_run(agent_id: str, workflow: str) -> list[str]:
         write_json(state_path(workflow), state)
     else:
         enforce_requirements_lock(state, workflow, state["current_state"])
+    return [f"post-run validation passed for {agent_id} in workflow {workflow}"]
+
+
+def commit_workflow_changes(workflow: str, state_name: str, agent_ids: list[str]) -> list[str]:
     workflow_dir = workflow_root(workflow)
-    workspace_git("add", str(workflow_dir))
-    diff = workspace_git("diff", "--cached", "--quiet", check=False)
+    if workflow_changes_are_gitignored(workflow):
+        return [f"workflow changes are gitignored; skipping commit for {workflow}"]
+    workspace_git("add", str(workflow_dir), workflow=workflow)
+    diff = workspace_git("diff", "--cached", "--quiet", workflow=workflow, check=False)
     if diff.returncode == 0:
         return [f"no workflow changes to commit for {workflow}"]
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    workspace_git("commit", "-m", f"[AEGIS-RUN] agent={agent_id} workflow={workflow} state={state['current_state']} ts={stamp}")
-    tag_name = f"workflow/{workflow}/{state['current_state']}-{stamp}"
-    workspace_git("tag", tag_name)
+    agent_label = ",".join(agent_ids)
+    workspace_git(
+        "commit",
+        "-m",
+        f"[AEGIS-RUN] agent={agent_label} workflow={workflow} state={state_name} ts={stamp}",
+        workflow=workflow,
+    )
+    tag_name = f"workflow/{workflow}/{state_name}-{stamp}"
+    workspace_git("tag", tag_name, workflow=workflow)
     return [f"committed workflow changes for {workflow}", f"tagged {tag_name}"]
+
+
+def post_agent_run(agent_id: str, workflow: str) -> list[str]:
+    messages = finalize_agent_run(agent_id, workflow)
+    state_name = load_state(workflow)["current_state"]
+    messages.extend(commit_workflow_changes(workflow, state_name, [agent_id]))
+    return messages
 
 
 def workflow_dry_run() -> list[str]:
@@ -3922,9 +4401,10 @@ def optimize_skill_content(agent: dict[str, Any], content: str) -> str:
 
 
 def append_evolution_log(entry: dict[str, Any]) -> None:
-    payload = load_json(EVOLUTION_LOG_PATH)
+    path = evolution_log_path()
+    payload = load_optional_json(path, default_workspace_evolution_log())
     payload.setdefault("entries", []).append(entry)
-    write_json(EVOLUTION_LOG_PATH, payload)
+    write_json(path, payload)
 
 
 def run_doctor_in(path: Path) -> None:
@@ -3933,7 +4413,7 @@ def run_doctor_in(path: Path) -> None:
 
 def evolution_run() -> list[str]:
     doctor()
-    registry = load_json(REGISTRY_PATH)
+    registry = load_json(runtime_registry_path())
     branch = f"auto-evolve-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     worktree_base = Path(tempfile.gettempdir()) / "aegis-evolution"
     worktree_path = worktree_base / branch
@@ -4140,6 +4620,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("workspace-doctor")
     run_doctor_cmd = sub.add_parser("run-doctor")
     run_doctor_cmd.add_argument("--workflow", required=True)
+    ui_cmd = sub.add_parser("ui")
+    ui_cmd.add_argument("--workflow")
     sub.add_parser("validate")
     sub.add_parser("sync-agent-metadata")
     sub.add_parser("sync-agents")
@@ -4147,6 +4629,13 @@ def main(argv: list[str] | None = None) -> int:
     workflow_workspace_cmd = sub.add_parser("workflow-workspace")
     workflow_workspace_cmd.add_argument("--workflow", required=True)
     sub.add_parser("workflow-dry-run")
+    bridge_up_cmd = sub.add_parser("bridge-up")
+    bridge_up_cmd.add_argument("--session")
+    bridge_up_cmd.add_argument("--model", action="append", default=[])
+    bridge_status_cmd = sub.add_parser("bridge-status")
+    bridge_status_cmd.add_argument("--session")
+    bridge_stop_cmd = sub.add_parser("bridge-stop")
+    bridge_stop_cmd.add_argument("--session")
     sub.add_parser("install-cron")
     sub.add_parser("install-shims")
     team_compose_cmd = sub.add_parser("compose-team-pack")
@@ -4252,6 +4741,10 @@ def main(argv: list[str] | None = None) -> int:
                 os.environ["AEGIS_WORKSPACE_ROOT"] = str(inferred_workspace)
         if args.command in {"doctor", "validate"}:
             result = doctor()
+        elif args.command == "ui":
+            from tools.control_plane import tui as control_plane_tui
+
+            return control_plane_tui.launch(initial_workflow=args.workflow)
         elif args.command == "workspace-doctor":
             result = workspace_doctor()
         elif args.command == "run-doctor":
@@ -4267,6 +4760,47 @@ def main(argv: list[str] | None = None) -> int:
             result = [str(resolved_workspace)]
         elif args.command == "workflow-dry-run":
             result = workflow_dry_run()
+        elif args.command == "bridge-up":
+            from tools.runtime_bridge import cli as runtime_bridge
+
+            try:
+                session = runtime_bridge.ensure_bridge_session(
+                    workspace=resolve_workspace(),
+                    session_name=args.session,
+                    models=args.model or ["aegis", "codex", "claude"],
+                )
+            except runtime_bridge.RuntimeBridgeError as exc:
+                raise ControlPlaneError(str(exc)) from exc
+            result = [
+                f"bridge session: {session.session_name}",
+                f"workspace: {session.workspace_root}",
+                f"window: {session.window_name}",
+            ]
+            result.extend(f"pane[{model}]: {pane_id}" for model, pane_id in session.panes.items())
+        elif args.command == "bridge-status":
+            from tools.runtime_bridge import cli as runtime_bridge
+
+            sessions = runtime_bridge.list_bridge_sessions(workspace=resolve_workspace())
+            if args.session:
+                sessions = [session for session in sessions if session.session_name == args.session]
+            result = []
+            for session in sessions:
+                result.append(
+                    f"{session.session_name} active={session.active} workspace={session.workspace_root} panes={','.join(sorted(session.panes))}"
+                )
+            if not result:
+                result = ["no bridge sessions"]
+        elif args.command == "bridge-stop":
+            from tools.runtime_bridge import cli as runtime_bridge
+
+            try:
+                session_name = runtime_bridge.stop_bridge_session(
+                    workspace=resolve_workspace(),
+                    session_name=args.session,
+                )
+            except runtime_bridge.RuntimeBridgeError as exc:
+                raise ControlPlaneError(str(exc)) from exc
+            result = [f"stopped bridge session: {session_name}"]
         elif args.command == "install-cron":
             result = ensure_cron()
         elif args.command == "install-shims":
