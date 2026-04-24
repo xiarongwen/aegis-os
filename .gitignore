@@ -6,7 +6,12 @@
 .aegis/overrides/
 .aegis/policies/
 .aegis/runs/
+.aegis/runtime-home/
+.aegis/state/
 .aegis/core/workflow-index.json
+
+# Coverage
+.coverage
 
 # Workflow runtime artifacts (keep structure, ignore temp files)
 workflows/*/.cache/
