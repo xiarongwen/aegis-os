@@ -116,6 +116,39 @@ User in Claude Code / Codex
 - `.aegis/core/orchestrator.yml`
   workflow 状态机与治理规则
 
+## Bridge Mode
+
+参考 `ccb` 的模式，AEGIS 现在支持一个 `tmux`-first 的 runtime bridge。
+
+这个模式的目标不是让 TUI 静默 `Popen` 多个 CLI，而是把 runtime 放进可见 pane，并为后续投递保留会话注册信息。
+
+### 能力
+
+- `codex` / `claude` / `aegis` 可放进同一个 `tmux` bridge session
+- 每个 workspace 有稳定的 bridge session 名称
+- session / pane 信息会写入 `.aegis/runtime-bridge/sessions/...`
+- `automation_runner` 在设置 `AEGIS_RUNTIME_BRIDGE=tmux` 时，会优先通过 bridge 把 `codex` / `claude` 任务投递到可见 pane 中执行
+- 没有 bridge 或没有 `tmux` 时，仍会退回原来的直接执行模式
+
+### 命令
+
+```bash
+aegisctl bridge-up
+aegisctl bridge-up --model codex --model claude
+aegisctl bridge-status
+aegisctl bridge-stop
+```
+
+### 配合 automation runner 使用
+
+```bash
+export AEGIS_RUNTIME_BRIDGE=tmux
+aegisctl bridge-up
+aegis ui
+```
+
+这时 runner 对 `codex` / `claude` 的单次执行会优先走 bridge pane，而不是完全隐藏在后台进程里。
+
 ## 安装
 
 ### 环境要求
@@ -124,11 +157,11 @@ User in Claude Code / Codex
 - `git`
 - `python3`
 - `bash`
-- Claude Code CLI
+- Claude Code CLI or Codex CLI
 
-当前 `scripts/bootstrap.sh` 会检查 `claude` 命令是否存在，因为它会把 AEGIS skill 和 slash commands 同步到 `~/.claude/skills` 和 `~/.claude/commands`。
+当前 `scripts/bootstrap.sh` 会检查 `claude` 或 `codex` 命令至少有一个存在。bootstrap 仍会把 AEGIS skill 和 Claude slash commands 同步到 `~/.claude/skills` 和 `~/.claude/commands`，这样 Claude Code 可以直接使用；Codex 场景则主要通过已安装 skill 或 CLI fallback 运行。
 
-如果你主要用 Codex，也建议先装 Claude Code CLI 来完成这一步；如果你不想装，也可以走下面的“手动安装”路径。
+如果你主要用 Codex，不再强制要求先装 Claude Code CLI；如果你也想用 `/aegis` 这类 Claude slash command，再额外安装 Claude Code CLI 即可。
 
 ### 官方安装方式
 
@@ -397,16 +430,69 @@ aegis ctl show-team-run --team AEGIS-video --scope global --run-id <run-id>
 aegis ctl complete-team-run --team AEGIS-video --scope global --run-id <run-id> --summary "Delivered first cut." --learning "Hook-first intros convert better."
 aegis ctl show-team-memory --team AEGIS-video --scope global
 aegis ctl team-doctor --scope all
+aegisctl ui
 ```
 
 ### fallback / debug
 
 ```bash
 aegis bootstrap "帮我开发一个聊天页面"
-aegis run "帮我调研某个项目并输出 PRD" --runtime codex
+aegis run "帮我调研某个项目并输出 PRD" --runtime auto
+aegis dispatch --workflow <workflow-id> --runtime auto --dry-run
+aegis dispatch --workflow <workflow-id> --runtime auto
 aegis route "帮我开发一个聊天页面"
-aegis resume --workflow <workflow-id>
+aegis resume --workflow <workflow-id> --runtime auto
 ```
+
+其中 `--runtime auto` 会根据当前 state、可用 CLI、以及可选的 `AEGIS_HOST_RUNTIME` 自动选择 runtime。
+
+如果你希望告诉 AEGIS 当前宿主是什么，可以显式设置：
+
+```bash
+export AEGIS_HOST_RUNTIME=claude
+```
+
+或：
+
+```bash
+export AEGIS_HOST_RUNTIME=codex
+```
+
+这样 `auto` 模式会把当前宿主优先视为 orchestrator，再在需要时选择是否用另一种 CLI 做 dispatch worker。
+
+终端可视化工作流控制台：
+
+```bash
+aegis ui
+aegisctl ui
+aegisctl ui --workflow <workflow-id>
+```
+
+这个界面不是只读看板，而是 workflow 的主入口。你可以直接在 TUI 里输入请求，然后由 AEGIS 自动：
+
+- 创建 workflow
+- 根据当前 state 和可用 CLI 选择 orchestrator / dispatch runtime
+- 调用 `claude` 或 `codex`
+- 继续 `resume` / `dispatch`
+
+界面会展示：
+
+- 当前工作流列表与 state
+- 自动推断的 orchestrator runtime 和 dispatch runtime
+- runtime 选择理由
+- 关键 artifacts 是否已生成
+- 最近一次动作结果
+
+按键：
+
+- `n` 新建请求并直接运行
+- `b` 新建请求但只 bootstrap
+- `u` 对当前 workflow 执行 resume
+- `d` 对当前 workflow 执行 dispatch dry-run
+- `x` 对当前 workflow 执行真实 dispatch
+- `j` / `k` 或方向键切换工作流
+- `r` 刷新
+- `q` 退出
 
 ## 目录结构
 
@@ -467,7 +553,7 @@ CLI 主要用于：
 
 当前仍然要注意：
 
-- `scripts/bootstrap.sh` 目前默认依赖 Claude Code CLI
+- `scripts/bootstrap.sh` 现在要求系统里至少有 `codex` 或 `claude` 其中一个 CLI
 - Codex 场景可以用，但更适合通过已安装 skill 来使用
 - deploy 阶段仍然会在需要人工信息或环境参数时停下
 - fallback runner 是兼容路径，不是主产品入口
