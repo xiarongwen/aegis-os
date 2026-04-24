@@ -14,13 +14,14 @@ AEGIS v2 是一个多模型协作编程框架，运行在 Claude Code / Codex CL
 aegis
 ```
 
-界面布局：
-![alt text](image.png)
+当前主界面特性：
 
-- **Tab 切换模式**：MOA 专家 / Pair / Swarm / Pipeline / Run
-- **MOA 专家**：多专家先独立判断，再讨论后聚合裁决
-- **空模式**：不选专家，直接描述目标、问题或想推进的工程
-- **快捷命令**：`/session` 查看会话，`/models` 查看模型状态，`/execute` 执行，`/simulate` 模拟
+- **默认欢迎页**：居中显示 AEGIS ASCII Logo 与当前工作区
+- **Tab 切换模式**：默认是 `MOA 专家`，可切到 `Pair / Swarm / Pipeline / Run`
+- **模式说明**：当前模式下方会显示一句简短说明
+- **启动过程可见**：任务启动时会显示 `advisor / routing / planning / dispatch` 的实时步骤
+- **快捷命令**：`/session` 查看会话，`/models` 查看模型状态，`/execute` 真实执行，`/simulate` 模拟执行
+- **全屏终端模式**：启动后占满终端页面，退出时恢复原终端内容
 
 ### 2. 命令行直接运行
 
@@ -41,8 +42,11 @@ aegis moa "设计新架构方案"
 ## 当前能力
 
 - **TUI Dashboard**：默认无参数进入交互式终端主界面
+- **启动可视化**：任务启动阶段会实时显示 advisor、routing、planning、dispatch
 - **五种协作模式**：Run / Pair / Swarm / Pipeline / MOA
+- **默认 MOA 模式**：主界面默认模式为 `MOA 专家`
 - **Intent Router**：自动选择路由策略（quality / speed / cost / balanced）
+- **Agentic Route Advisor**：先由本地 `claude -p` / `codex exec` 提供路由建议，再进入 scheduler
 - **Model Registry**：多模型注册、测试、启用/禁用管理
 - **Session Store**：sqlite 持久化会话、事件、产物
 - **Session 恢复**：resume / recover 从失败或中断点继续
@@ -123,6 +127,12 @@ aegis v2 config show
 ```bash
 aegis
 ```
+
+默认首页不会直接显示最近会话或运行详情：
+
+- `/session`：显式打开最近会话与详情
+- `/models`：显式打开模型状态
+- 任务执行中：自动切换到任务面板
 
 ### 4. 命令行直接运行
 
@@ -214,11 +224,11 @@ aegis v2 router dry-run "修复登录 bug" --mode balanced
 
 | 模式 | 说明 | 适用场景 |
 |------|------|----------|
-| **Run** | 单模型执行，带路由策略选择 | 常规开发任务 |
-| **Pair** | 两个模型结对，相互 review | 复杂逻辑、需要交叉验证 |
-| **Swarm** | 多模型并行执行，结果聚合 | 批量处理、独立子任务 |
-| **Pipeline** | 八段式流水线：plan → split → spec → build → review → verify → gate → delivery | 发布、大型重构 |
-| **MOA** | 多专家独立判断，讨论后聚合裁决 | 架构设计、技术决策 |
+| **Run** | 单路径直接执行，适合明确且简单的任务 | 常规开发任务 |
+| **Pair** | 两个模型结对，来回编写与审查 | 复杂逻辑、需要交叉验证 |
+| **Swarm** | 多模型并行拆分执行，再统一聚合 | 批量处理、独立子任务 |
+| **Pipeline** | 按阶段顺序传递上下文与结果 | 发布、大型重构 |
+| **MOA** | 多专家先独立判断，再讨论后聚合裁决 | 架构设计、技术决策、复杂评审 |
 
 ## Session 与产物
 
