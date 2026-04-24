@@ -1,0 +1,38 @@
+{
+  "id": "darwin-skill",
+  "name": "Darwin Evolution Engine",
+  "version": "1.2.0",
+  "entrypoint": "agents/darwin-skill/SKILL.md",
+  "enabled": true,
+  "evolution": false,
+  "role": "evolution-engine",
+  "capabilities": [
+    "evolution",
+    "governance"
+  ],
+  "workflow_types": [],
+  "allowed_states": [],
+  "contract_actions": [
+    "run_verification",
+    "sync_agent_metadata"
+  ],
+  "inputs": [
+    "agents/",
+    ".aegis/core/registry.json",
+    "shared-contexts/review-rubric-8dim.json",
+    "shared-contexts/tool-contracts.yml"
+  ],
+  "outputs": [
+    ".aegis/core/evolution.log"
+  ],
+  "dependencies": [
+    "contract:run_verification",
+    "contract:sync_agent_metadata"
+  ],
+  "description": "Evaluates and evolves agent instructions using a conservative ratchet and structured audit trail.",
+  "metrics": {
+    "last_score": 8.0,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

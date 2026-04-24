@@ -1,14 +1,40 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from .registry import ModelRegistry
 from .types import RoutingDecision, RoutingStrategy, TaskType
 
 
 class TaskRouter:
-    def __init__(self, registry: ModelRegistry) -> None:
+    def __init__(
+        self,
+        registry: ModelRegistry,
+        *,
+        classifier: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = None,
+    ) -> None:
         self.registry = registry
+        self.classifier = classifier
+
+    def validate_request(self, request: str) -> str:
+        normalized = request.strip()
+        if not normalized:
+            raise ValueError("request cannot be empty; describe the coding task you want AEGIS to handle")
+        ambiguous_requests = {
+            "优化代码",
+            "优化一下",
+            "改一下",
+            "处理一下",
+            "做一下",
+            "看看代码",
+            "帮我看看",
+            "完善一下",
+        }
+        if normalized in ambiguous_requests:
+            raise ValueError(
+                "request is too ambiguous; specify the code area, target file, or concrete outcome you want"
+            )
+        return normalized
 
     def classify_task(self, request: str, context: dict[str, Any] | None = None) -> TaskType:
         ctx = context or {}
@@ -64,8 +90,14 @@ class TaskRouter:
         forced = ctx.get("strategy")
         if forced:
             return RoutingStrategy(str(forced))
+        request_text = str(ctx.get("request_text", "")).lower()
+        if task_type == TaskType.CODE_REVIEW and (
+            complexity >= 5
+            or any(keyword in request_text for keyword in ("安全", "security", "性能", "performance", "可维护性", "tradeoff", "取舍", "多个角度"))
+        ):
+            return RoutingStrategy.MOA
         if task_type == TaskType.ARCHITECTURE:
-            return RoutingStrategy.SINGLE
+            return RoutingStrategy.MOA
         if task_type == TaskType.CODE_REVIEW:
             return RoutingStrategy.SWARM
         if task_type == TaskType.TESTING:
@@ -87,10 +119,20 @@ class TaskRouter:
         ctx = context or {}
         explicit_models = ctx.get("models")
         if explicit_models:
-            names = [item.strip() for item in str(explicit_models).split(",") if item.strip()]
+            if isinstance(explicit_models, list):
+                names = [str(item).strip() for item in explicit_models if str(item).strip()]
+            else:
+                names = [item.strip() for item in str(explicit_models).split(",") if item.strip()]
             available = [name for name in names if name in self.registry.names()]
             if available:
                 return available
+
+        if strategy == RoutingStrategy.MOA:
+            preferred_order = ["codex", "claude-sonnet-4-6", "claude-opus-4-7", "o3-mini", "local-llm"]
+            enabled = set(self.registry.bundle.enabled_model_names())
+            selected = [name for name in preferred_order if name in enabled and name in self.registry.names()]
+            if selected:
+                return selected[:3]
 
         mode = str(
             ctx.get("mode")
@@ -175,7 +217,18 @@ class TaskRouter:
         return max(20, base + modifier - parallel_discount)
 
     def route(self, request: str, context: dict[str, Any] | None = None) -> RoutingDecision:
-        ctx = context or {}
+        ctx = dict(context or {})
+        request = self.validate_request(request)
+        ctx = dict(ctx)
+        ctx.setdefault("request_text", request)
+        advisor_payload: dict[str, Any] | None = None
+        if self.classifier is not None and not any(key in ctx for key in ("task_type", "strategy", "models")):
+            suggestion = self.classifier(request, ctx)
+            if isinstance(suggestion, dict):
+                advisor_payload = dict(suggestion)
+                for key in ("task_type", "strategy", "models", "mode"):
+                    if suggestion.get(key) not in (None, "", []):
+                        ctx[key] = suggestion[key]
         task_type = self.classify_task(request, ctx)
         complexity = self.estimate_complexity(request, ctx)
         strategy = self.determine_strategy(task_type, complexity, ctx)
@@ -186,6 +239,9 @@ class TaskRouter:
             f"selected {strategy.value} strategy at complexity {complexity}/10",
             f"picked models {', '.join(models)} for {mode} mode",
         ]
+        advisor_rationale = advisor_payload.get("rationale") if isinstance(advisor_payload, dict) else None
+        if isinstance(advisor_rationale, list):
+            rationale.extend(f"advisor: {str(item)}" for item in advisor_rationale if str(item).strip())
         return RoutingDecision(
             task_type=task_type,
             strategy=strategy,
@@ -195,4 +251,5 @@ class TaskRouter:
             estimated_cost=self.calculate_cost(task_type, models, complexity),
             estimated_time_seconds=self.calculate_time(strategy, complexity, models),
             rationale=rationale,
+            advisor=advisor_payload,
         )

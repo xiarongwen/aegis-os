@@ -1,0 +1,64 @@
+{
+  "name": "AEGIS 8-Dimension Review Rubric",
+  "version": "1.0.0",
+  "total_max_score": 100,
+  "dimensions": [
+    {
+      "id": "frontmatter",
+      "name": "Frontmatter Quality",
+      "weight": 8,
+      "criteria": "Clear name, description includes triggers and usage context"
+    },
+    {
+      "id": "workflow_clarity",
+      "name": "Workflow Clarity",
+      "weight": 15,
+      "criteria": "Steps are explicit, ordered, with clear inputs and outputs"
+    },
+    {
+      "id": "boundary_conditions",
+      "name": "Boundary Conditions",
+      "weight": 10,
+      "criteria": "Handles errors, edge cases, and has fallback paths"
+    },
+    {
+      "id": "checkpoints",
+      "name": "Checkpoint Design",
+      "weight": 7,
+      "criteria": "Key decisions have validation or gate mechanisms"
+    },
+    {
+      "id": "specificity",
+      "name": "Instruction Specificity",
+      "weight": 15,
+      "criteria": "Commands are concrete, with parameters, formats, and examples"
+    },
+    {
+      "id": "resource_integration",
+      "name": "Resource Integration",
+      "weight": 5,
+      "criteria": "References and dependencies are correctly declared and reachable"
+    },
+    {
+      "id": "architecture",
+      "name": "Overall Architecture",
+      "weight": 15,
+      "criteria": "Structure is layered, non-redundant, and aligned with AEGIS principles"
+    },
+    {
+      "id": "practical_performance",
+      "name": "Practical Performance",
+      "weight": 25,
+      "criteria": "When executed, the output matches the claimed capability with high quality"
+    }
+  ],
+  "scoring_formula": "sum(dimension_score * weight) / 10",
+  "gate_thresholds": {
+    "L1_RESEARCH": 8.0,
+    "L2_REVIEW": 8.0,
+    "L3_CODE_REVIEW": 8.0,
+    "L3_SECURITY_AUDIT": 9.0,
+    "L4_REVIEW": 8.5,
+    "L5_REVIEW": 9.0
+  }
+}

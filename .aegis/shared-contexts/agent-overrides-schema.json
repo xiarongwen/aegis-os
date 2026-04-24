@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "agents"
+  ],
+  "properties": {
+    "version": { "type": "string" },
+    "agents": { "type": "object" }
+  }
+}

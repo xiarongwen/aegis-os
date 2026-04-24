@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "run_id",
+    "team_id",
+    "scope",
+    "request",
+    "summary",
+    "status",
+    "artifacts",
+    "feedback",
+    "learnings",
+    "recorded_at"
+  ]
+}

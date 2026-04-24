@@ -1,0 +1,46 @@
+{
+  "id": "security-auditor",
+  "name": "Security Audit Agent",
+  "version": "1.3.0",
+  "entrypoint": "agents/security-auditor/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "security-reviewer",
+  "capabilities": [
+    "audit",
+    "governance"
+  ],
+  "workflow_types": [
+    "build",
+    "audit",
+    "launch"
+  ],
+  "allowed_states": [
+    "L3_SECURITY_AUDIT"
+  ],
+  "contract_actions": [
+    "run_gate_review",
+    "run_verification"
+  ],
+  "inputs": [
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l3-dev/"
+  ],
+  "outputs": [
+    ".aegis/runs/{workflow}/l3-dev/security-scan-report.md",
+    ".aegis/runs/{workflow}/l3-dev/review-loop-status.json",
+    ".aegis/runs/{workflow}/l3-dev/review-round-{round}.md",
+    ".aegis/runs/{workflow}/l3-dev/review-passed.json"
+  ],
+  "dependencies": [
+    "contract:run_gate_review",
+    "contract:run_verification"
+  ],
+  "description": "Performs secure-code review and enforces the security veto gate across parallel development outputs and host-enhanced execution.",
+  "metrics": {
+    "last_score": 8.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

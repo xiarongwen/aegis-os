@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "gate_overrides"
+  ],
+  "properties": {
+    "version": { "type": "string" },
+    "gate_overrides": { "type": "object" }
+  }
+}

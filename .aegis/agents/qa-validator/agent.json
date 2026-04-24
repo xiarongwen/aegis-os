@@ -1,0 +1,47 @@
+{
+  "id": "qa-validator",
+  "name": "QA Validation Agent",
+  "version": "1.3.0",
+  "entrypoint": "agents/qa-validator/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "validator",
+  "capabilities": [
+    "build",
+    "audit"
+  ],
+  "workflow_types": [
+    "build",
+    "launch"
+  ],
+  "allowed_states": [
+    "L4_VALIDATE"
+  ],
+  "contract_actions": [
+    "validate_requirements_traceability",
+    "run_verification"
+  ],
+  "inputs": [
+    ".aegis/runs/{workflow}/l2-planning/PRD.md",
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json",
+    ".aegis/runs/{workflow}/l3-dev/",
+    ".aegis/runs/{workflow}/l4-validation/"
+  ],
+  "outputs": [
+    ".aegis/runs/{workflow}/l4-validation/test-report.md",
+    ".aegis/runs/{workflow}/l4-validation/qa-signoff.json",
+    ".aegis/runs/{workflow}/l4-validation/requirements-traceability.json"
+  ],
+  "dependencies": [
+    "contract:validate_requirements_traceability",
+    "contract:run_verification"
+  ],
+  "description": "Runs release validation, coverage checks, acceptance traceability, and integration assurance before the release gate.",
+  "metrics": {
+    "last_score": 8.0,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

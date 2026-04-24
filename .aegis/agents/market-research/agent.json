@@ -1,0 +1,43 @@
+{
+  "id": "market-research",
+  "name": "Market Research Agent",
+  "version": "1.3.0",
+  "entrypoint": "agents/market-research/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "research",
+  "capabilities": [
+    "research"
+  ],
+  "workflow_types": [
+    "research"
+  ],
+  "allowed_states": [
+    "L1_RESEARCH"
+  ],
+  "contract_actions": [
+    "search_web",
+    "fetch_source",
+    "run_verification"
+  ],
+  "inputs": [
+    "human:product_idea",
+    "human:target_market?"
+  ],
+  "outputs": [
+    ".aegis/runs/{workflow}/l1-intelligence/market_report.md",
+    ".aegis/runs/{workflow}/l1-intelligence/competitive_analysis.md",
+    ".aegis/runs/{workflow}/l1-intelligence/tech_feasibility.md"
+  ],
+  "dependencies": [
+    "contract:search_web",
+    "contract:fetch_source",
+    "contract:run_verification"
+  ],
+  "description": "Conducts source-backed market research, competition analysis, and feasibility framing.",
+  "metrics": {
+    "last_score": 7.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

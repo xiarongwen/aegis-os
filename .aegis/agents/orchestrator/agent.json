@@ -1,0 +1,55 @@
+{
+  "id": "orchestrator",
+  "name": "AEGIS Orchestrator",
+  "version": "1.3.0",
+  "entrypoint": "agents/orchestrator/SKILL.md",
+  "enabled": true,
+  "evolution": false,
+  "role": "control-plane",
+  "capabilities": [
+    "orchestration",
+    "governance"
+  ],
+  "workflow_types": [
+    "research",
+    "planning",
+    "build",
+    "launch",
+    "audit",
+    "operate"
+  ],
+  "allowed_states": [
+    "INIT",
+    "DONE",
+    "BLOCKED"
+  ],
+  "contract_actions": [
+    "spawn_agent",
+    "run_gate_review",
+    "write_state",
+    "sync_agent_metadata",
+    "plan_parallel_work",
+    "resolve_host_capability",
+    "delegate_specialist_task"
+  ],
+  "inputs": [
+    "human:workflow_request"
+  ],
+  "outputs": [
+    ".aegis/runs/{workflow}/state.json"
+  ],
+  "dependencies": [
+    "contract:spawn_agent",
+    "contract:run_gate_review",
+    "contract:write_state",
+    "contract:plan_parallel_work",
+    "contract:resolve_host_capability",
+    "contract:delegate_specialist_task"
+  ],
+  "description": "Git-native workflow engine that drives the multi-agent system from INIT through gated completion, including parallel task routing inside host-native execution.",
+  "metrics": {
+    "last_score": 9.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

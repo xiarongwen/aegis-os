@@ -1,0 +1,45 @@
+{
+  "id": "deploy-sre",
+  "name": "Deploy SRE Agent",
+  "version": "1.2.0",
+  "entrypoint": "agents/deploy-sre/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "release-engineer",
+  "capabilities": [
+    "release"
+  ],
+  "workflow_types": [
+    "launch"
+  ],
+  "allowed_states": [
+    "L5_DEPLOY"
+  ],
+  "contract_actions": [
+    "ask_user",
+    "run_verification"
+  ],
+  "inputs": [
+    ".aegis/runs/{workflow}/l2-planning/architecture.md",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json",
+    ".aegis/runs/{workflow}/l3-dev/",
+    ".aegis/runs/{workflow}/l4-validation/"
+  ],
+  "outputs": [
+    ".aegis/runs/{workflow}/l5-release/deployment-plan.md",
+    ".aegis/runs/{workflow}/l5-release/deployment-log.md",
+    ".aegis/runs/{workflow}/l5-release/rollback-plan.md",
+    ".aegis/runs/{workflow}/l5-release/monitoring-checklist.md",
+    ".aegis/runs/{workflow}/l5-release/post-deploy-security-scan-report.md"
+  ],
+  "dependencies": [
+    "contract:ask_user",
+    "contract:run_verification"
+  ],
+  "description": "Executes safe deployment, rollback planning, and post-deploy operational verification.",
+  "metrics": {
+    "last_score": 8.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

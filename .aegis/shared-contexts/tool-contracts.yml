@@ -1,0 +1,158 @@
+{
+  "version": "1.0.0",
+  "abstract_actions": {
+    "search_web": {
+      "required_inputs": ["query"],
+      "expected_outputs": ["ranked_search_results"],
+      "failure_handling": "Record the blocked lookup, cite assumptions explicitly, and request human confirmation before making unsupported claims.",
+      "codex_adapter": {
+        "primary": "web.search_query",
+        "fallback": "Summarize known gaps and stop before claiming facts you could not verify."
+      }
+    },
+    "fetch_source": {
+      "required_inputs": ["url"],
+      "expected_outputs": ["fetched_source_excerpt"],
+      "failure_handling": "Retry with a different source or record the missing evidence in the output.",
+      "codex_adapter": {
+        "primary": "web.open",
+        "fallback": "Use an alternate primary source or mark the claim unsupported."
+      }
+    },
+    "spawn_agent": {
+      "required_inputs": ["agent_id", "task"],
+      "expected_outputs": ["agent_result"],
+      "failure_handling": "Stop the workflow transition and surface the blocked dependency.",
+      "codex_adapter": {
+        "primary": "functions.spawn_agent / functions.send_input / functions.wait_agent",
+        "fallback": "Keep work local and document why delegation could not happen."
+      }
+    },
+    "run_gate_review": {
+      "required_inputs": ["artifact_dir", "rubric", "review_round"],
+      "expected_outputs": ["gate-review-report.md", "review-loop-status.json", "review-round-N.md", "review-passed.json when verdict is LGTM"],
+      "failure_handling": "Fail the gate and preserve the review evidence.",
+      "codex_adapter": {
+        "primary": "Use registered reviewer agent plus control-plane schema validation",
+        "fallback": "Do not advance the workflow."
+      }
+    },
+    "ask_user": {
+      "required_inputs": ["question"],
+      "expected_outputs": ["human_response"],
+      "failure_handling": "Pause the task until the required decision or credential source is provided.",
+      "codex_adapter": {
+        "primary": "Direct assistant message to the user",
+        "fallback": "Block deployment rather than guessing."
+      }
+    },
+    "write_plan": {
+      "required_inputs": ["problem_statement"],
+      "expected_outputs": ["implementation_plan"],
+      "failure_handling": "Do not start multi-file implementation without a documented plan.",
+      "codex_adapter": {
+        "primary": "Assistant-authored plan or structured design notes",
+        "fallback": "Reduce scope to a safer bounded change."
+      }
+    },
+    "lock_requirements": {
+      "required_inputs": ["prd", "architecture", "task_breakdown"],
+      "expected_outputs": ["requirements-lock.json"],
+      "failure_handling": "Block downstream stages until a single frozen requirement set exists.",
+      "codex_adapter": {
+        "primary": "control-plane requirements lock generation and hash validation",
+        "fallback": "Do not enter L3 until the locked requirement artifact is complete."
+      }
+    },
+    "validate_requirements_traceability": {
+      "required_inputs": ["requirements-lock.json", "test-report.md"],
+      "expected_outputs": ["requirements-traceability.json"],
+      "failure_handling": "Fail QA if a locked requirement cannot be traced to meaningful evidence.",
+      "codex_adapter": {
+        "primary": "control-plane schema validation plus QA-authored traceability artifact",
+        "fallback": "Mark uncovered requirements explicitly and block release."
+      }
+    },
+    "run_test_driven_cycle": {
+      "required_inputs": ["acceptance_criteria"],
+      "expected_outputs": ["tests", "implementation"],
+      "failure_handling": "Return the work item to planning if tests cannot be made deterministic.",
+      "codex_adapter": {
+        "primary": "Repository test tooling plus explicit red-green-refactor workflow",
+        "fallback": "Document why TDD is blocked and halt before shipping."
+      }
+    },
+    "run_verification": {
+      "required_inputs": ["artifacts"],
+      "expected_outputs": ["verification_report"],
+      "failure_handling": "Mark the artifact incomplete and do not claim readiness.",
+      "codex_adapter": {
+        "primary": "tests, static validation, and control-plane doctor checks",
+        "fallback": "Surface exact verification gaps."
+      }
+    },
+    "write_state": {
+      "required_inputs": ["workflow_id", "state"],
+      "expected_outputs": ["state.json"],
+      "failure_handling": "Stop the workflow because state is the source of truth.",
+      "codex_adapter": {
+        "primary": "python3 -m tools.control_plane write-state --workflow <id> --state <STATE>",
+        "fallback": "Keep the workflow in its previous committed state."
+      }
+    },
+    "sync_agent_metadata": {
+      "required_inputs": ["registry"],
+      "expected_outputs": ["agents/*/agent.json"],
+      "failure_handling": "Fail doctor and block evolution or runtime actions until metadata is in sync.",
+      "codex_adapter": {
+        "primary": "python3 -m tools.control_plane sync-agent-metadata",
+        "fallback": "Refuse to run with stale derived metadata."
+      }
+    },
+    "scan_repo_reuse": {
+      "required_inputs": ["requirements-lock.json", "task_scope"],
+      "expected_outputs": ["reuse candidates", "duplication risks", "reuse-audit.json evidence"],
+      "failure_handling": "Do not implement duplicate logic without explicitly recording why reuse was insufficient.",
+      "codex_adapter": {
+        "primary": "Repository inspection with rg, file reads, and host session analysis",
+        "fallback": "Record the blocked reuse scan and stop before duplicating existing capabilities."
+      }
+    },
+    "plan_parallel_work": {
+      "required_inputs": ["requirements-lock.json", "architecture.md"],
+      "expected_outputs": ["task_breakdown.json with owners, write scopes, and parallel groups"],
+      "failure_handling": "Serialize execution instead of parallelizing without clear ownership and boundaries.",
+      "codex_adapter": {
+        "primary": "Host session planning plus control-plane task-breakdown validation",
+        "fallback": "Keep work sequential and mark the parallel split unresolved."
+      }
+    },
+    "freeze_implementation_contracts": {
+      "required_inputs": ["task_breakdown.json", "architecture.md"],
+      "expected_outputs": ["implementation-contracts.json"],
+      "failure_handling": "Block L3 development until shared interfaces and write scopes are frozen.",
+      "codex_adapter": {
+        "primary": "Planning artifact generation plus control-plane validation",
+        "fallback": "Do not start multi-agent development."
+      }
+    },
+    "resolve_host_capability": {
+      "required_inputs": ["abstract_action", "runtime"],
+      "expected_outputs": ["resolved host capability or explicit fallback"],
+      "failure_handling": "Use the documented fallback and record the limitation in reuse-audit.json.",
+      "codex_adapter": {
+        "primary": "shared-contexts/host-capability-map.yml plus host runtime tools/skills",
+        "fallback": "Stay local and explicitly document the reduced execution mode."
+      }
+    },
+    "delegate_specialist_task": {
+      "required_inputs": ["task", "owner", "write_scope"],
+      "expected_outputs": ["specialist execution result"],
+      "failure_handling": "Keep the task local or re-plan the ownership split before continuing.",
+      "codex_adapter": {
+        "primary": "functions.spawn_agent when explicitly allowed, otherwise host-native role routing",
+        "fallback": "Do not claim parallel execution happened if the task stayed local."
+      }
+    }
+  }
+}

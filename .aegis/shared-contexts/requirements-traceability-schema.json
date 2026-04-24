@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "workflow_id",
+    "requirements_lock_hash",
+    "covered_stories",
+    "uncovered_items",
+    "approved_at"
+  ]
+}

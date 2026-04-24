@@ -1,0 +1,50 @@
+{
+  "id": "prd-architect",
+  "name": "PRD Architect Agent",
+  "version": "1.2.0",
+  "entrypoint": "agents/prd-architect/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "planner",
+  "capabilities": [
+    "planning"
+  ],
+  "workflow_types": [
+    "planning"
+  ],
+  "allowed_states": [
+    "L2_PLANNING"
+  ],
+  "contract_actions": [
+    "write_plan",
+    "lock_requirements",
+    "plan_parallel_work",
+    "freeze_implementation_contracts",
+    "run_verification"
+  ],
+  "inputs": [
+    ".aegis/runs/{workflow}/l1-intelligence/market_report.md",
+    ".aegis/runs/{workflow}/l1-intelligence/competitive_analysis.md",
+    ".aegis/runs/{workflow}/l1-intelligence/tech_feasibility.md"
+  ],
+  "outputs": [
+    ".aegis/runs/{workflow}/l2-planning/PRD.md",
+    ".aegis/runs/{workflow}/l2-planning/architecture.md",
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json"
+  ],
+  "dependencies": [
+    "contract:write_plan",
+    "contract:lock_requirements",
+    "contract:plan_parallel_work",
+    "contract:freeze_implementation_contracts",
+    "contract:run_verification"
+  ],
+  "description": "Transforms research into a buildable PRD, architecture, a parallel-ready task graph, and frozen implementation contracts.",
+  "metrics": {
+    "last_score": 7.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

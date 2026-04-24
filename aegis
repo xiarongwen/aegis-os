@@ -2,7 +2,13 @@
 
 set -euo pipefail
 
-AEGIS_ROOT="$(cd "$(dirname "$0")" && pwd)"
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$SOURCE_DIR/$SOURCE"
+done
+AEGIS_ROOT="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 resolve_workspace_root() {
   if [[ -n "${AEGIS_WORKSPACE_ROOT:-}" ]]; then
@@ -24,21 +30,53 @@ if [[ "${AEGIS_SKIP_WORKSPACE_AUTO_DETECT:-0}" != "1" ]]; then
 fi
 export AEGIS_CORE_ROOT="$AEGIS_ROOT"
 export PYTHONPATH="$AEGIS_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+if [[ $# -eq 0 ]]; then
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "AEGIS TUI requires Bun. Install Bun or run: python3 -m tools.aegis_v2" >&2
+    exit 1
+  fi
+  if [[ ! -d "$AEGIS_ROOT/node_modules/ink" ]]; then
+    echo "AEGIS TUI dependencies are not installed. Run: bun install" >&2
+    exit 1
+  fi
+  exec bun run --cwd "$AEGIS_ROOT" tui
+fi
 if [[ "${1:-}" == "ctl" ]]; then
   shift
   exec python3 -m tools.control_plane "$@"
 fi
-if [[ "${1:-}" == "ui" ]]; then
+if [[ "${1:-}" == "v1" || "${1:-}" == "legacy" ]]; then
   shift
-  exec python3 -m tools.control_plane ui "$@"
+  exec python3 -m tools.aegis_1 "$@"
 fi
-if [[ "${1:-}" == "legacy" ]]; then
+if [[ "${1:-}" == "v2" ]]; then
   shift
-  exec python3 -m tools.automation_runner "$@"
+  exec python3 -m tools.aegis_v2 "$@"
 fi
+
 case "${1:-}" in
-  bootstrap|resume|dispatch|route)
-    exec python3 -m tools.automation_runner "$@"
+  ui|legacy|bootstrap|resume|dispatch|route)
+    cat <<'EOF' >&2
+AEGIS 1.0 legacy workflow commands are no longer part of the product CLI.
+
+Use one of:
+  aegis "<task>"
+  aegis run "<task>"
+  aegis pair "<task>"
+  aegis swarm "<task>"
+  aegis session list|show|resume|recover
+
+For the old v1 CLI, use:
+  aegis v1 <command>
+EOF
+    exit 2
+    ;;
+  ulw|ultrawork)
+    shift
+    exec python3 -m tools.aegis_v2 run "$@"
+    ;;
+  bridge|doctor|agents)
+    exec python3 -m tools.aegis_1 "$@"
     ;;
   *)
     exec python3 -m tools.aegis_v2 "$@"

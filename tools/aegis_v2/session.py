@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from contextlib import closing
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -40,12 +41,12 @@ class SessionStore:
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.paths.session_db_path)
+        connection = sqlite3.connect(self.paths.session_db_path, isolation_level=None)
         connection.row_factory = sqlite3.Row
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -100,7 +101,7 @@ class SessionStore:
         timestamp = utc_now()
         session_id = f"sess-{uuid.uuid4().hex[:12]}"
         payload = metadata or {}
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO sessions (
@@ -124,7 +125,7 @@ class SessionStore:
         return self.get_session(session_id)
 
     def add_checkpoint(self, session_id: str, stage: str, payload: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO checkpoints (session_id, stage, payload_json, created_at)
@@ -147,7 +148,7 @@ class SessionStore:
         timestamp = utc_now()
         raw_type = message_type.value if isinstance(message_type, MessageType) else str(message_type)
         payload = metadata or {}
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO messages (
@@ -183,7 +184,7 @@ class SessionStore:
         if metadata:
             merged_metadata.update(metadata)
         timestamp = utc_now()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 UPDATE sessions
@@ -195,7 +196,7 @@ class SessionStore:
         return self.get_session(session_id)
 
     def get_session(self, session_id: str) -> SessionRecord:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
         if row is None:
             raise KeyError(session_id)
@@ -213,7 +214,7 @@ class SessionStore:
         )
 
     def list_sessions(self, *, limit: int = 20) -> list[SessionRecord]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?",
                 (limit,),
@@ -235,7 +236,7 @@ class SessionStore:
         ]
 
     def list_checkpoints(self, session_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT stage, payload_json, created_at FROM checkpoints WHERE session_id = ? ORDER BY id ASC",
                 (session_id,),
@@ -250,7 +251,7 @@ class SessionStore:
         ]
 
     def list_messages(self, session_id: str) -> list[SessionMessage]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             rows = conn.execute(
                 """
                 SELECT session_id, channel, sender, recipient, message_type, content, metadata_json, created_at
@@ -414,7 +415,11 @@ class MultiModelSession:
 
     def complete(self, final_output: str, *, metadata: dict[str, Any] | None = None) -> SessionRecord:
         self.shared_context.update("final_output", final_output)
-        payload = {"shared_context": self.shared_context.export(), "final_output": final_output}
+        payload = {
+            "shared_context": self.shared_context.export(),
+            "final_output": final_output,
+            "execution_state": "completed",
+        }
         if metadata:
             payload.update(metadata)
         self.checkpoint("complete", payload)
@@ -422,7 +427,11 @@ class MultiModelSession:
         return self.record
 
     def fail(self, error: str, *, metadata: dict[str, Any] | None = None) -> SessionRecord:
-        payload = {"error": error, "shared_context": self.shared_context.export()}
+        payload = {
+            "error": error,
+            "shared_context": self.shared_context.export(),
+            "execution_state": "failed",
+        }
         if metadata:
             payload.update(metadata)
         self.publish(

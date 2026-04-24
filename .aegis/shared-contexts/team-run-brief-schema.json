@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "run_id",
+    "team_id",
+    "scope",
+    "request",
+    "team_display_name",
+    "mission",
+    "selected_roles",
+    "review_mode",
+    "playbook_steps",
+    "recent_run_summaries",
+    "recent_learnings",
+    "preference_memory",
+    "project_memory",
+    "relevant_memories",
+    "prepared_at"
+  ]
+}

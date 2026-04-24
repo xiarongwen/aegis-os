@@ -1,0 +1,48 @@
+{
+  "id": "backend-squad",
+  "name": "Backend Development Squad",
+  "version": "1.3.0",
+  "entrypoint": "agents/backend-squad/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "developer",
+  "capabilities": [
+    "build"
+  ],
+  "workflow_types": [
+    "build"
+  ],
+  "allowed_states": [
+    "L3_DEVELOP"
+  ],
+  "contract_actions": [
+    "write_plan",
+    "scan_repo_reuse",
+    "resolve_host_capability",
+    "run_test_driven_cycle",
+    "run_verification"
+  ],
+  "inputs": [
+    ".aegis/runs/{workflow}/l2-planning/PRD.md",
+    ".aegis/runs/{workflow}/l2-planning/architecture.md",
+    ".aegis/runs/{workflow}/l2-planning/task_breakdown.json",
+    ".aegis/runs/{workflow}/l2-planning/implementation-contracts.json",
+    ".aegis/runs/{workflow}/l2-planning/requirements-lock.json"
+  ],
+  "outputs": [
+    ".aegis/runs/{workflow}/l3-dev/backend/"
+  ],
+  "dependencies": [
+    "contract:write_plan",
+    "contract:scan_repo_reuse",
+    "contract:resolve_host_capability",
+    "contract:run_test_driven_cycle",
+    "contract:run_verification"
+  ],
+  "description": "Implements backend APIs, schemas, and business logic with DRY-first reuse checks, host-capability augmentation, and TDD discipline.",
+  "metrics": {
+    "last_score": 7.5,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

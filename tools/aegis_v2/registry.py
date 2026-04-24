@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
-import shutil
 from dataclasses import dataclass
 from typing import Any
+
+from tools.host_runtime import resolve_runtime_binary
 
 from .config import AppPaths, load_config, load_registry
 from .types import ModelHealth, ModelSpec
@@ -12,7 +13,10 @@ from .types import ModelHealth, ModelSpec
 RUNTIME_BINARY_MAP = {
     "claude-code-cli": "claude",
     "codex-cli": "codex",
+    "aider-cli": "aider",
+    "opencode-cli": "opencode",
     "local": "ollama",
+    "api": None,
 }
 
 PROVIDER_ENV_MAP = {
@@ -20,7 +24,6 @@ PROVIDER_ENV_MAP = {
     "openai": "OPENAI_API_KEY",
     "ollama": None,
 }
-
 
 @dataclass(slots=True)
 class RegistryBundle:
@@ -98,14 +101,17 @@ class ModelRegistry:
         env_ok = True
         notes: list[str] = []
         if runtime_binary:
-            binary_ok = shutil.which(runtime_binary) is not None
+            resolved_binary = resolve_runtime_binary(runtime_binary)
+            binary_ok = resolved_binary is not None
             notes.append(f"binary={runtime_binary}:{'ok' if binary_ok else 'missing'}")
+        requires_env = spec.runtime == "api" and provider_env is not None
         if provider_env:
             env_ok = bool(os.environ.get(provider_env))
-            notes.append(f"env={provider_env}:{'set' if env_ok else 'missing'}")
-        if spec.runtime == "api" and provider_env:
-            binary_ok = True
-        available = binary_ok and env_ok
+            notes.append(
+                f"env={provider_env}:{'set' if env_ok else 'missing'}"
+                + (" (required)" if requires_env else " (optional)")
+            )
+        available = binary_ok and (env_ok if requires_env else True)
         return ModelHealth(
             name=name,
             available=available,

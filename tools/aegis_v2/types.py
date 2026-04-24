@@ -59,6 +59,7 @@ class RoutingDecision:
     estimated_cost: float
     estimated_time_seconds: int
     rationale: list[str] = field(default_factory=list)
+    advisor: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

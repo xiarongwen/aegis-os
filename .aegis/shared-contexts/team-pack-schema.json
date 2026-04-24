@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "team_id",
+    "display_name",
+    "mission",
+    "domain",
+    "lifecycle_scope",
+    "roles",
+    "playbook_steps",
+    "review_mode",
+    "tooling_policy",
+    "memory_policy",
+    "evolution_policy",
+    "host_integration",
+    "created_at"
+  ],
+  "role_required": [
+    "id",
+    "title",
+    "summary"
+  ],
+  "review_mode_required": [
+    "mode",
+    "auto_fix_loop"
+  ],
+  "tooling_policy_required": [
+    "search_policy",
+    "repo_context_policy",
+    "parallelism_policy"
+  ],
+  "memory_policy_required": [
+    "retain_run_summaries",
+    "store_team_learnings",
+    "store_preference_memory",
+    "store_project_memory",
+    "semantic_recall"
+  ],
+  "evolution_policy_required": [
+    "enabled",
+    "mode"
+  ],
+  "host_integration_required": [
+    "skill_name",
+    "installed"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "workflow_id",
+    "generated_at",
+    "contract_version",
+    "shared_interfaces",
+    "owned_write_scopes",
+    "integration_rules",
+    "change_control"
+  ]
+}

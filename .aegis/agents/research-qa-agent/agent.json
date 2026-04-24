@@ -1,0 +1,52 @@
+{
+  "id": "research-qa-agent",
+  "name": "Research QA Agent",
+  "version": "1.2.0",
+  "entrypoint": "agents/research-qa-agent/SKILL.md",
+  "enabled": true,
+  "evolution": true,
+  "role": "gate-reviewer",
+  "capabilities": [
+    "governance",
+    "audit"
+  ],
+  "workflow_types": [
+    "research",
+    "planning",
+    "build",
+    "launch",
+    "audit"
+  ],
+  "allowed_states": [
+    "L1_REVIEW",
+    "L2_REVIEW",
+    "L4_REVIEW",
+    "L5_REVIEW"
+  ],
+  "contract_actions": [
+    "run_gate_review",
+    "run_verification"
+  ],
+  "inputs": [
+    ".aegis/runs/{workflow}/l1-intelligence/",
+    ".aegis/runs/{workflow}/l2-planning/",
+    ".aegis/runs/{workflow}/l4-validation/",
+    ".aegis/runs/{workflow}/l5-release/"
+  ],
+  "outputs": [
+    "gate-review-report.md",
+    "review-loop-status.json",
+    "review-round-{round}.md",
+    "review-passed.json"
+  ],
+  "dependencies": [
+    "contract:run_gate_review",
+    "contract:run_verification"
+  ],
+  "description": "Independent reviewer for research, planning, QA, and release gates.",
+  "metrics": {
+    "last_score": 8.0,
+    "evolution_count": 0,
+    "rollback_count": 0
+  }
+}

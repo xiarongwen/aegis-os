@@ -1,0 +1,19 @@
+{
+  "name": "aegis-os",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tui": "bun run tui/src/main.tsx",
+    "tui:check": "tsc -p tui/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "ink": "^5.2.1",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "typescript": "^5.7.2"
+  }
+}

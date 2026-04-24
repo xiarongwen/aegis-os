@@ -107,12 +107,24 @@ DEFAULT_CONFIG_YAML = dedent(
     collaboration:
       pair_programming:
         max_iterations: 3
+        max_stagnant_rounds: 2
         coder_model: codex
         reviewer_model: claude-sonnet-4-6
+      moa:
+        discussion_rounds: 2
+        max_peer_findings: 2
+        expert_roles:
+          - name: correctness
+            focus: Validate whether the answer is technically correct and complete against the request.
+          - name: risk
+            focus: Find hidden risks, regressions, edge cases, and operational failure modes.
+          - name: maintainability
+            focus: Judge long-term maintainability, clarity, change surface, and testability.
       swarm:
         default_workers: 3
         worker_model: codex
         aggregator_model: claude-sonnet-4-6
+        splitter_model: claude-sonnet-4-6
       pipeline:
         stages:
           - name: design
@@ -149,5 +161,17 @@ DEFAULT_CONFIG_YAML = dedent(
       max_concurrent_models: 3
       cache_responses: true
       cache_ttl: 3600
+
+    runtime:
+      retries: 2
+      timeout_seconds:
+        default: 120
+        claude-code-cli: 180
+        codex-cli: 180
+        api: 90
+        local: 120
+      fallback:
+        prefer_same_runtime: true
+        prefer_capability_match: true
     """
 ).strip() + "\n"

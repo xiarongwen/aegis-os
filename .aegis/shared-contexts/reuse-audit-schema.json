@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "workflow_id",
+    "agent_id",
+    "generated_at",
+    "requirements_lock_hash",
+    "completed_tasks",
+    "scanned_existing_assets",
+    "reused_assets",
+    "new_assets",
+    "duplication_risk_checks",
+    "host_capabilities_used",
+    "verification_commands"
+  ]
+}

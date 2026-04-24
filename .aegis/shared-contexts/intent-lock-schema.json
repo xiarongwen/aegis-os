@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "required": [
+    "version",
+    "workflow_id",
+    "created_at",
+    "original_request",
+    "normalized_goal",
+    "workflow_type",
+    "target_state",
+    "routing_rationale",
+    "runtime",
+    "status"
+  ]
+}

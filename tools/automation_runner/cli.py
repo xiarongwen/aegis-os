@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from tools.host_runtime import HostCliRequest, get_host_cli_adapter
 from tools.control_plane import cli as control_plane
 
 
@@ -406,8 +407,19 @@ def run_invocation_via_bridge(
     return RuntimeResult(command=bridge_command, output_path=log_path)
 
 
-class CodexRuntimeAdapter(RuntimeAdapter):
-    name = "codex"
+class HostCliRuntimeAdapter(RuntimeAdapter):
+    name = "base"
+    cli_name = "base"
+
+    def build_request(
+        self,
+        *,
+        prompt: str,
+        workspace: Path,
+        log_path: Path,
+        use_search: bool,
+    ) -> HostCliRequest:
+        raise NotImplementedError
 
     def prepare(
         self,
@@ -419,27 +431,37 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         log_path: Path,
         use_search: bool,
     ) -> RuntimeResult:
+        del agent_id, state_name
         workspace = control_plane.resolve_workspace(workflow=workflow_id)
-        cmd = ["codex"]
-        if use_search:
-            cmd.append("--search")
-        cmd.extend(
-            [
-                "exec",
-                "--full-auto",
-                "-C",
-                str(workspace),
-                "-o",
-                str(log_path),
-                prompt,
-            ]
+        request = self.build_request(
+            prompt=prompt,
+            workspace=workspace,
+            log_path=log_path,
+            use_search=use_search,
         )
-        env = os.environ.copy()
-        existing_pythonpath = env.get("PYTHONPATH")
-        env["PYTHONPATH"] = str(ROOT) if not existing_pythonpath else f"{ROOT}{os.pathsep}{existing_pythonpath}"
-        env["AEGIS_CORE_ROOT"] = str(ROOT)
-        env["AEGIS_WORKSPACE_ROOT"] = str(workspace)
-        return RuntimeInvocation(command=cmd, env=env, cwd=str(workspace))
+        invocation = get_host_cli_adapter(self.cli_name).build_invocation(request)
+        return RuntimeInvocation(command=invocation.command, env=invocation.env, cwd=invocation.cwd)
+
+
+class CodexRuntimeAdapter(HostCliRuntimeAdapter):
+    name = "codex"
+    cli_name = "codex"
+
+    def build_request(
+        self,
+        *,
+        prompt: str,
+        workspace: Path,
+        log_path: Path,
+        use_search: bool,
+    ) -> HostCliRequest:
+        return HostCliRequest(
+            prompt=prompt,
+            workspace_root=workspace,
+            core_root=ROOT,
+            output_path=log_path,
+            use_search=use_search,
+        )
 
     def run(
         self,
@@ -492,40 +514,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
 
 
-class ClaudeRuntimeAdapter(RuntimeAdapter):
+class ClaudeRuntimeAdapter(HostCliRuntimeAdapter):
     name = "claude"
+    cli_name = "claude"
 
-    def prepare(
+    def build_request(
         self,
         *,
-        agent_id: str,
-        workflow_id: str,
-        state_name: str,
         prompt: str,
+        workspace: Path,
         log_path: Path,
         use_search: bool,
-    ) -> RuntimeResult:
-        workspace = control_plane.resolve_workspace(workflow=workflow_id)
-        cmd = [
-            "claude",
-            "-p",
-            "--bare",
-            "--permission-mode",
-            "bypassPermissions",
-            "--output-format",
-            "text",
-            "--add-dir",
-            str(workspace),
-            "--add-dir",
-            str(ROOT),
-            prompt,
-        ]
-        env = os.environ.copy()
-        existing_pythonpath = env.get("PYTHONPATH")
-        env["PYTHONPATH"] = str(ROOT) if not existing_pythonpath else f"{ROOT}{os.pathsep}{existing_pythonpath}"
-        env["AEGIS_CORE_ROOT"] = str(ROOT)
-        env["AEGIS_WORKSPACE_ROOT"] = str(workspace)
-        return RuntimeInvocation(command=cmd, env=env, cwd=str(workspace))
+    ) -> HostCliRequest:
+        del log_path, use_search
+        return HostCliRequest(
+            prompt=prompt,
+            workspace_root=workspace,
+            core_root=ROOT,
+            extra_args=["--permission-mode", "bypassPermissions"],
+        )
 
     def run(
         self,
@@ -576,6 +583,57 @@ class ClaudeRuntimeAdapter(RuntimeAdapter):
             event_callback=event_callback,
             write_stdout_to_log=True,
         )
+
+
+class AiderRuntimeAdapter(HostCliRuntimeAdapter):
+    name = "aider"
+    cli_name = "aider"
+
+    def build_request(
+        self,
+        *,
+        prompt: str,
+        workspace: Path,
+        log_path: Path,
+        use_search: bool,
+    ) -> HostCliRequest:
+        del log_path, use_search
+        return HostCliRequest(prompt=prompt, workspace_root=workspace, core_root=ROOT)
+
+    def run(
+        self,
+        *,
+        agent_id: str,
+        workflow_id: str,
+        state_name: str,
+        prompt: str,
+        log_path: Path,
+        use_search: bool,
+        event_callback: EventCallback | None = None,
+    ) -> RuntimeResult:
+        invocation = self.prepare(
+            agent_id=agent_id,
+            workflow_id=workflow_id,
+            state_name=state_name,
+            prompt=prompt,
+            log_path=log_path,
+            use_search=use_search,
+        )
+        return run_invocation_streaming(
+            invocation=invocation,
+            runtime_name=self.name,
+            agent_id=agent_id,
+            workflow_id=workflow_id,
+            state_name=state_name,
+            log_path=log_path,
+            event_callback=event_callback,
+            write_stdout_to_log=True,
+        )
+
+
+class OpencodeRuntimeAdapter(AiderRuntimeAdapter):
+    name = "opencode"
+    cli_name = "opencode"
 
 
 def load_intent_lock_schema() -> dict[str, Any]:
@@ -939,6 +997,10 @@ def pick_adapter(name: str) -> RuntimeAdapter:
         return CodexRuntimeAdapter()
     if name == "claude":
         return ClaudeRuntimeAdapter()
+    if name == "aider":
+        return AiderRuntimeAdapter()
+    if name == "opencode":
+        return OpencodeRuntimeAdapter()
     raise AutomationRunnerError(f"unsupported runtime: {name}")
 
 
@@ -955,6 +1017,10 @@ def available_runtimes() -> list[str]:
         names.append("codex")
     if shutil.which("claude"):
         names.append("claude")
+    if shutil.which("aider"):
+        names.append("aider")
+    if shutil.which("opencode"):
+        names.append("opencode")
     return names
 
 
